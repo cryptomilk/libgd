@@ -285,6 +285,15 @@ GD_LIB_PKG_CHECK([LIBWEBP], [WEBP], [webp], [libwebp], [
   ])
 ])
 
+# TODO: I don't think this is right.
+dnl Check for avif support.
+GD_LIB_CHECK([LIBAVIF], [AVIF], [avif], [
+  AC_CHECK_LIB([avif], [AvifGetInfo], [dnl
+    AS_VAR_APPEND([LIBAVIF_LIBS], [" -lavif"])
+    gd_found_lib=yes
+  ])
+])
+
 gl_VISIBILITY()
 CFLAGS="$CFLAGS $CFLAG_VISIBILITY"
 
