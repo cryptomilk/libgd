@@ -37,7 +37,7 @@ static void BGD_STDCALL writebmp(gdImagePtr im, FILE *out) {
 }/* writejpeg*/
 
 
-enum FType {UNKNOWN, PNG, JPG, GIF, TIFF, GD, GD2, WEBP};
+enum FType {UNKNOWN, PNG, JPG, GIF, TIFF, GD, GD2, WEBP, AVIF};
 static struct FileType {
     const char *ext;
     ReadFn reader;
@@ -51,6 +51,10 @@ static struct FileType {
 
     {".xbm",    gdImageCreateFromXbm,   NULL,           NULL},
     {".tga",    gdImageCreateFromTga,   NULL,           NULL},
+
+#ifdef HAVE_LIBAVIF
+    {".avif",   gdImageCreateFromAvif,  gdImageAvif,    NULL},
+#endif
 
 #ifdef HAVE_LIBPNG
     {".png",    gdImageCreateFromPng,   gdImagePng,     NULL},
