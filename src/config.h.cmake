@@ -4,7 +4,7 @@
 #cmakedefine BGDWIN32
 
 /* Whether to support gd image formats */
-#cmakedefine01 ENABLE_GD_FORMATS
+#define ENABLE_GD_FORMATS @ENABLE_GD_FORMATS@
 
 /* Define to 1 if you have the <dirent.h> header file. */
 #cmakedefine HAVE_DIRENT_H
@@ -26,6 +26,9 @@
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #cmakedefine HAVE_INTTYPES_H
+
+/* Define if you have avif */
+#cmakedefine HAVE_LIBAVIF
 
 /* Define if you have fontconfig */
 #cmakedefine HAVE_LIBFONTCONFIG
@@ -75,8 +78,14 @@
 /* Define to 1 if you have the <stdint.h> header file. */
 #cmakedefine HAVE_STDINT_H
 
+/* Define to 1 if you have the <stdlib.h> header file. */
+#cmakedefine HAVE_STDLIB_H
+
 /* Define to 1 if you have the <strings.h> header file. */
 #cmakedefine HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#cmakedefine HAVE_STRING_H
 
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #cmakedefine HAVE_SYS_STAT_H
