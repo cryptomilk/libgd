@@ -8,6 +8,11 @@
 # also defined, but not for general use are
 #  AVIF_LIBRARY, where to find the AVIF library.
 #
+# AVIF needs an encoder. Several are available.
+# You can choose an encoder by setting AVIF_ENCODER.
+# Presently this is set to "aom", a standard encoder.
+# This module also defines AVIF_ENCODER_LIBRARY
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
@@ -35,12 +40,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-include(FindZLIB)
-
 find_path(AVIF_INCLUDE_DIR avif.h
 /usr/local/include/avif
 /usr/include/avif
 )
+
+# Note that another AVIF encoder could be used here instead. libavif supports a few.
+set (AVIF_ENCODER aom)
 
 set(AVIF_NAMES ${AVIF_NAMES} avif)
 find_library(AVIF_LIBRARY
@@ -52,8 +58,23 @@ if (AVIF_LIBRARY AND AVIF_INCLUDE_DIR)
   set(AVIF_INCLUDE_DIR ${AVIF_INCLUDE_DIR})
   set(AVIF_LIBRARIES ${AVIF_LIBRARY})
   set(AVIF_FOUND "YES")
-
 endif (AVIF_LIBRARY AND AVIF_INCLUDE_DIR)
+
+# TODO: we'll need to put the libavif encoder library somewhere more logical.
+find_library(AVIF_ENCODER_LIBRARY
+  NAMES aom
+  PATHS "${PROJECT_SOURCE_DIR}/../ext/${AVIF_ENCODER}/build.libavif" /usr/lib64 /usr/lib /usr/local/lib
+)
+
+if (AVIF_ENCODER_LIBRARY)
+  if (NOT AVIF_FIND_QUIETLY)
+    message(STATUS "Found AVIF encoder: ${AVIF_ENCODER_LIBRARY}")
+  endif (NOT AVIF_FIND_QUIETLY)
+else (AVIF_ENCODER_LIBRARY)
+  if (AVIF_FIND_REQUIRED)
+    message(FATAL_ERROR "Could not find AVIF encoder library")
+  endif (AVIF_FIND_REQUIRED)
+endif (AVIF_ENCODER_LIBRARY)
 
 if (AVIF_FOUND)
   if (NOT AVIF_FIND_QUIETLY)
@@ -66,4 +87,4 @@ else (AVIF_FOUND)
 endif (AVIF_FOUND)
 
 mark_as_advanced(AVIF_INCLUDE_DIR AVIF_LIBRARY )
-set(AVIF_LIBRARIES ${AVIF_LIBRARY})
+set(AVIF_LIBRARIES ${AVIF_LIBRARY} ${AVIF_ENCODER_LIBRARY})
