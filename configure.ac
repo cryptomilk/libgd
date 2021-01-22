@@ -278,17 +278,16 @@ GD_LIB_PKG_CHECK([LIBTIFF], [TIFF], [tiff], [libtiff-4], [
 ])
 
 dnl Check for webp support.
-GD_LIB_CHECK([LIBWEBP], [WEBP], [webp], [
+GD_LIB_PKG_CHECK([LIBWEBP], [WEBP], [webp], [libwebp], [
   AC_CHECK_LIB([webp], [WebPGetInfo], [dnl
     AS_VAR_APPEND([LIBWEBP_LIBS], [" -lwebp"])
     gd_found_lib=yes
   ])
 ])
 
-# TODO: I don't think this is right.
 dnl Check for avif support.
-GD_LIB_CHECK([LIBAVIF], [AVIF], [avif], [
-  AC_CHECK_LIB([avif], [AvifGetInfo], [dnl
+GD_LIB_PKG_CHECK([LIBAVIF], [AVIF], [avif], [libavif], [
+  AC_CHECK_LIB([avif], [avifVersion], [dnl
     AS_VAR_APPEND([LIBAVIF_LIBS], [" -lavif"])
     gd_found_lib=yes
   ])
@@ -323,6 +322,7 @@ AC_MSG_RESULT([
    Support for PNG library:          $gd_with_LIBPNG
    Support for JPEG library:         $gd_with_LIBJPEG
    Support for WebP library:         $gd_with_LIBWEBP
+   Support for AVIF library:         $gd_with_LIBAVIF
    Support for TIFF library:         $gd_with_LIBTIFF
    Support for Freetype 2.x library: $gd_with_LIBFREETYPE
    Support for Fontconfig library:   $gd_with_LIBFONTCONFIG

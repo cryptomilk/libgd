@@ -1,6 +1,6 @@
 LIST(APPEND TESTS_FILES
-	wbmp_null
-	wbmp_im2im
+	avif2gd
+	gd2avif
 )
 
 ADD_GD_TESTS()

@@ -631,7 +631,6 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE * inFile);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * infile);
 
-
 BGD_DECLARE(gdImagePtr) gdImageCreateFromTiff(FILE *inFile);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromTiffCtx(gdIOCtx *infile);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromTiffPtr(int size, void *data);

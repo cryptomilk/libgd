@@ -1,6 +1,6 @@
 libgd_test_programs += \
-	avif/wbmp_null \
-	avif/wbmp_im2im
+	avif/avif2gd \
+	avif/gd2avif
 
 EXTRA_DIST += \
 	avif/CMakeLists.txt

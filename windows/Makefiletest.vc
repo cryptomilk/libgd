@@ -1,5 +1,6 @@
 TESTS=bmp\bmp_im2im \
-bmp\bmp_null \
+avif\avif2gd \
+avif\gd2avif \
 freetype\bug00132 \
 gd\gd_im2im \
 gd\gd_null \
