@@ -25,6 +25,8 @@ OPTION(ENABLE_RAQM "Enable RAQM support" 0)
 ## temporarily hardcoded. TODO: remove these!
 SET(ENABLE_AVIF 1)
 SET(ENABLE_WEBP 1)
+SET(ENABLE_JPEG 1)
+SET(ENABLE_PNG 1)
 
 if (BUILD_TEST)
 	ENABLE_TESTING()

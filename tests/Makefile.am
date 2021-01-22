@@ -99,6 +99,7 @@ EXTRA_DIST += \
 
 # We don't keep any media files in the top dir ... just generated outputs.
 CLEANFILES += \
+  *.avif \
 	*.bmp \
 	*.gd \
 	*.gd2 \

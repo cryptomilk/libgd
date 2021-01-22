@@ -22,14 +22,15 @@
 #ifdef HAVE_LIBAVIF
 #include "avif.h"
 
+// TODO: Consider adding params for "effort", "quality"... +???
 
 /* Helper function definitions */
 
-void destroyCtxAndAvifIO(avifIO *io);
-avifIO *createAvifIOFromCtx(gdIOCtx * ctx);
-avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out);
-void destroyCtxAndAvifIO(avifIO *io);
-avifBool isAvifError(avifResult result, char * msg);
+static void destroyCtxAndAvifIO(avifIO *io);
+static avifIO *createAvifIOFromCtx(gdIOCtx * ctx);
+static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out);
+static void destroyCtxAndAvifIO(avifIO *io);
+static avifBool isAvifError(avifResult result, char * msg);
 
 
 /*
@@ -102,25 +103,19 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data)
 */
 BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
 {
-  //TODO: clean all these declarations up
-  int width, height;
-  uint8_t *filedata = NULL;
-  uint8_t *argb = NULL;
-  unsigned char *read, *temp;
-  size_t size = 0, n;
   int x, y;
-  uint8_t *p; 
-  gdImagePtr im;
+  uint8_t *p8; 
+  uint16_t *p16;
+  gdImage *im = NULL;
   avifResult result;
   avifIO *io;
   avifDecoder *decoder;
-  // int returnCode = 1;
+  avifRGBImage rgb;
 
   decoder = avifDecoderCreate();
   io = createAvifIOFromCtx(ctx);
 
-  avifRGBImage rgb;
-  memset(&rgb, 0, sizeof(rgb));
+  // memset(rgb, 0, sizeof(rgb));
 
   avifDecoderSetIO(decoder, io);
 
@@ -130,6 +125,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
   }
 
   AVIF_DEBUG(printf("Succeeded in decoding image"));
+  AVIF_DEBUG(printf("Parsed AVIF: %ux%u (%ubpc)\n", decoder->image->width, decoder->image->height, decoder->image->depth));
 
   // Note again that, for an image sequence, we read only the first image, ignoring the rest.
   result = avifDecoderNextImage(decoder);
@@ -137,41 +133,68 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
     goto cleanup;
   }
 
+  // Set up the avifRGBImage. Use default settings unless there's demand to override these.
   avifRGBImageSetDefaults(&rgb, decoder->image);
-  // Override YUV(A)->RGB(A) defaults here: depth, format, chromaUpsampling, ignoreAlpha, libYUVUsage, etc
-
-  // Alternative: set rgb.pixels and rgb.rowBytes yourself, which should match your chosen rgb.format
-  // Be sure to use uint16_t* instead of uint8_t* for rgb.pixels/rgb.rowBytes if (rgb.depth > 8)
   avifRGBImageAllocatePixels(&rgb);
 
-  if (avifImageYUVToRGB(decoder->image, &rgb) != AVIF_RESULT_OK) {
-    gd_error("gd-avif error: Conversion from YUV failed");
+  result = avifImageYUVToRGB(decoder->image, &rgb);
+  if (isAvifError(result, "gd-avif error: Conversion from YUV to RGB failed")) {
     goto cleanup;
   }
 
-  // create a new gd image
+  im = gdImageCreateTrueColor(decoder->image->width, decoder->image->height);
+	if (!im) {
+		gd_error("gd-avif error: Could not create GD truecolor image");
+		goto cleanup;
+	}
 
+
+// Now we need to read the pixels from the AVIF image and copy them into the GD image.
+  // Image depth can be 8, 10, 12, or 16. But if depth>8, pixels are uint16_t.
+// I think we should use tpixels because I think those are true color pixels. I think the pixels array is palette-based.
+//TODO: can these two cases be combined?
+
+  if (rgb.depth == 8) {
+    for (y = 0, p8 = rgb.pixels; y < decoder->image->height; y++) {
+      for (x = 0; x < decoder->image->width; x++) {
+        register uint8_t r = *(p8++);
+        register uint8_t g = *(p8++);
+        register uint8_t b = *(p8++);
+        register uint8_t a = *(p8++);
+        im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, a);
+      }
+    }
+    
+  } else {
+    for (y = 0, p16 = (uint16_t *) rgb.pixels; y < decoder->image->height; y++) {
+      for (x = 0; x < decoder->image->width; x++) {
+        register uint16_t r = *(p16++);
+        register uint16_t g = *(p16++);
+        register uint16_t b = *(p16++);
+        register uint16_t a = *(p16++);
+        im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, a);
+      }
+    }
+  }
+	
+//TODO: this is just here for testing. Delete it.
   if (rgb.depth > 8) {
-    uint16_t * firstPixel = (uint16_t *)rgb.pixels;
-    printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]);
+    uint16_t * firstPixel = (uint16_t *) rgb.pixels;
+    AVIF_DEBUG(printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]));
   } else {
     uint8_t * firstPixel = rgb.pixels;
-    printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]);
+    AVIF_DEBUG(printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]));
   }
-
 
   /* do not use gdFree here, in case gdFree/alloc is mapped to something else than libc */
 
   cleanup:
-    free(argb);
-    avifRGBImageFreePixels(&rgb); // Only use in conjunction with avifRGBImageAllocatePixels()
+    avifRGBImageFreePixels(&rgb);
     avifDecoderDestroy(decoder);
-    gdImageDestroy(im);
-    // more things to free up?
-    return NULL;
+    // TODO: more things to free up?
 
-  im->saveAlphaFlag = 1;
-  return im;
+    im->saveAlphaFlag = 1;
+    return im;
 }
 
 /*** HELPER FUNCTIONS ***/
@@ -181,7 +204,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
    If so, decode the error and output it, and return true.
    Otherwise, return false.
 */
-avifBool isAvifError(avifResult result, char * msg) {
+static avifBool isAvifError(avifResult result, char * msg) {
   if (result != AVIF_RESULT_OK) {
     gd_error("gd-avif error: %s: %s", msg, avifResultToString(result));
     return GD_TRUE;
@@ -199,7 +222,7 @@ avifBool isAvifError(avifResult result, char * msg) {
 //TODO: make sure I allocate memory for my structs.
 //TODO: deal with sizeHint, persistent.
 
-avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
+static avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
   avifIO *io;
 
   io = (avifIO *) gdMalloc(sizeof(avifIO));
@@ -228,7 +251,7 @@ avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
  We ignore readFlags, just as the avifIO*ReaderRead() functions do.
 */
 
-avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out)
+static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out)
 {
   void *dataBuf;
   gdIOCtx *ctx = io->data; // TODO: should I have cast this?
@@ -258,7 +281,7 @@ avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t 
 }
 
 // avif.h says this is optional, but it seemed easy to implement.
-void destroyCtxAndAvifIO(struct avifIO *io) {
+static void destroyCtxAndAvifIO(struct avifIO *io) {
   gdIOCtx *ctx = io->data; // TODO: should I have cast this?
 
   ctx->gd_free(ctx);
