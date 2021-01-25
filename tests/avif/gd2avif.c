@@ -17,11 +17,9 @@ int main(int argc, char **argv)
 	FILE *in, *out;
 
 	if (argc != 3) {
-		fprintf(stderr, "Usage: aviftogd2 filename.avif filename.gd2\n");
+		fprintf(stderr, "Usage: aviftogd2 filename.gif filename.gd2\n");
 		exit(1);
 	}
-
-	printf("reading file %s\n", argv[1]);
 
 	in = fopen(argv[1], "rb");
 	if (!in) {
@@ -43,9 +41,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	gdImageJpeg(im, out, 75);
-
-	// gdImageGd(im, out);
+	gdImageGd(im, out);
 	fclose(out);
 	gdImageDestroy(im);
 
