@@ -57,13 +57,15 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE * infile)
 {
   gdImagePtr image;
   gdIOCtx *ctx = gdNewFileCtx(infile);
+
+  printf("in gdImageCreateFromAvif()\n");
   
   if (!ctx) {
     return GD_FALSE;
   }
 
   image = gdImageCreateFromAvifCtx(ctx);
-  ctx->gd_free(ctx);
+  // ctx->gd_free(ctx);
 
   return image;
 }
@@ -124,8 +126,8 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
     goto cleanup;
   }
 
-  AVIF_DEBUG(printf("Succeeded in decoding image"));
-  AVIF_DEBUG(printf("Parsed AVIF: %ux%u (%ubpc)\n", decoder->image->width, decoder->image->height, decoder->image->depth));
+  printf("Succeeded in decoding image\n");
+  printf("Parsed AVIF: %ux%u (%ubpc)\n", decoder->image->width, decoder->image->height, decoder->image->depth);
 
   // Note again that, for an image sequence, we read only the first image, ignoring the rest.
   result = avifDecoderNextImage(decoder);
@@ -144,7 +146,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
 
   im = gdImageCreateTrueColor(decoder->image->width, decoder->image->height);
 	if (!im) {
-		gd_error("gd-avif error: Could not create GD truecolor image");
+		gd_error("avif error: Could not create GD truecolor image");
 		goto cleanup;
 	}
 
@@ -180,17 +182,19 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
 //TODO: this is just here for testing. Delete it.
   if (rgb.depth > 8) {
     uint16_t * firstPixel = (uint16_t *) rgb.pixels;
-    AVIF_DEBUG(printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]));
+    printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]);
   } else {
     uint8_t * firstPixel = rgb.pixels;
-    AVIF_DEBUG(printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]));
+    printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]);
   }
 
   /* do not use gdFree here, in case gdFree/alloc is mapped to something else than libc */
 
   cleanup:
-    avifRGBImageFreePixels(&rgb);
+    printf("Gonna do avifDecoderDestroy\n");
     avifDecoderDestroy(decoder);
+    // avifFree(io);
+    // avifRGBImageFreePixels(&rgb);
     // TODO: more things to free up?
 
     im->saveAlphaFlag = 1;
@@ -206,7 +210,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
 */
 static avifBool isAvifError(avifResult result, char * msg) {
   if (result != AVIF_RESULT_OK) {
-    gd_error("gd-avif error: %s: %s", msg, avifResultToString(result));
+    gd_error("avif error: %s: %s", msg, avifResultToString(result));
     return GD_TRUE;
   }
 
@@ -249,16 +253,19 @@ static avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
  Assume we've stashed the gdIOCtx in io->data, as we do in createAvifIOFromCtx().
 
  We ignore readFlags, just as the avifIO*ReaderRead() functions do.
+
+ If there's a problem, this returns an avifResult error.
+ Of course this error shouldn't be returned by any top-level GD function in this file.
 */
 
 static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out)
 {
-  void *dataBuf;
-  gdIOCtx *ctx = io->data; // TODO: should I have cast this?
+  void *dataBuf = NULL;
+  gdIOCtx *ctx = (gdIOCtx *) io->data;
 
   //TODO: if we set sizeHint, this will be more efficient.
 
-  if (offset > LONG_MAX || size > 0) {
+  if (offset > LONG_MAX || size < 0) {
     return AVIF_RESULT_IO_ERROR;
   }
 
@@ -267,7 +274,11 @@ static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, 
     return AVIF_RESULT_IO_ERROR;
   }
 
-  gdRealloc(dataBuf, size);
+  dataBuf = gdRealloc(dataBuf, size);
+  if (!dataBuf) {
+    gd_error("avif decode: realloc failed");
+    return AVIF_RESULT_UNKNOWN_ERROR;
+  }
 
   // Read the number of bytes requested. If getBuf() returns a negative value, that means there was an error.
   int charsRead = ctx->getBuf(ctx, dataBuf, size);
