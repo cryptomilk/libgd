@@ -1089,10 +1089,10 @@ BGD_DECLARE(void *) gdImageWebpPtrEx (gdImagePtr im, int *size, int quantization
 BGD_DECLARE(void) gdImageWebpCtx (gdImagePtr im, gdIOCtx * outfile, int quantization);
 
 BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE * outFile);
-BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE * outFile, int quantization);
+BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE * outFile, int quality, int speed);
 BGD_DECLARE(void *) gdImageAvifPtr (gdImagePtr im, int *size);
-BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quantization);
-BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quantization);
+BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quality, int speed);
+BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed);
 
 /**
  * Group: GifAnim
