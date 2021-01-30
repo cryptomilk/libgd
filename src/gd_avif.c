@@ -32,7 +32,7 @@
   DEFAULT_QUALITY: following gd conventions, -1 indicates the default.
   DEFAULT_SPEED: AVIF_SPEED_DEFAULT is -1 - it simply tells the encoder to use the default speed.
 */
-#define DEFAULT_MAX_THREADS 1
+
 #define DEFAULT_CHROMA_SUBSAMPLING AVIF_PIXEL_FORMAT_YUV420
 #define DEFAULT_QUANTIZER 30
 #define DEFAULT_QUALITY -1
@@ -44,6 +44,20 @@
 // Our quality param ranges from 0 to 100
 #define MAX_QUALITY 100
 
+// For computing the number of tiles and threads to use for encoding
+// Maximum threads are from libavif/contrib/gkd-pixbuf/loader.c
+#define MIN_TILE_AREA (512 * 512)
+#define MAX_TILES 6
+#define MAX_THREADS 64
+
+
+typedef struct {
+  int tileRowsLog2;
+  int tileColumnsLog2;
+  int threads;
+}
+tilesAndThreads;
+
 /* Helper function signatures */
 
 static void destroyCtxAndAvifIO(avifIO *io);
@@ -53,6 +67,7 @@ static void destroyCtxAndAvifIO(avifIO *io);
 static avifBool isAvifError(avifResult result, char * msg);
 static int quality2Quantizer(int quality);
 static uint8_t convertTo8BitAlpha(uint8_t originalAlpha);
+
 
 /*** DECODING FUNCTIONS ***/
 
@@ -289,6 +304,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
 {
   avifResult result;
   avifRGBImage rgb;
+  tilesAndThreads theTilesAndThreads;
   avifRWData avifOutput = AVIF_DATA_EMPTY;
 
   register uint32_t val;
@@ -311,6 +327,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
   rgb.format = AVIF_RGB_FORMAT_RGBA;
   rgb.chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
   rgb.ignoreAlpha = AVIF_FALSE;
+
   avifRGBImageAllocatePixels(&rgb); // this allocates memory, and sets rgb.rowBytes and rgb.pixels
 
   // Parse RGB data from the GD image, and copy it into the AVIF RGB image.
@@ -334,17 +351,23 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
     goto cleanup;
   }
 
+  // Encode the image in AVIF format
+
   avifEncoder * encoder = avifEncoderCreate();
   int quantizerQuality = quality == DEFAULT_QUALITY ? 
                          DEFAULT_QUANTIZER : quality2Quantizer(quality);
+
+//TODO: should this be a pointer? should I be returning a struct or a reference?
+  theTilesAndThreads = computeTiles(rgb.height, rgb.width);
 
   encoder->minQuantizer = quantizerQuality;
   encoder->maxQuantizer = quantizerQuality;
   encoder->minQuantizerAlpha = quantizerQuality;
   encoder->maxQuantizerAlpha = quantizerQuality;
   encoder->speed = speed;
-
-  // compute tileRowsLog2 and tileColsLog2
+  encoder->tileColsLog2 = theTilesAndThreads.tileColumnsLog2;
+  encoder->tileRowsLog2 = theTilesAndThreads.tileRowsLog2;
+  encoder->maxThreads = theTilesAndThreads.threads;
 
   result = avifEncoderAddImage(encoder, im, 1, AVIF_ADD_IMAGE_FLAG_SINGLE); //TODO: why 1?
   if (isAvifError(result, "Could not encode image")) {
@@ -356,7 +379,8 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
     goto cleanup;
   }
 
-  // write stuff
+  // Write the pixels to the GD ctx.
+  gdPutBuf(avifOutput.data, avifOutput.size, outfile);
 
   cleanup:
     avifEncoderDestroy(encoder);
@@ -401,6 +425,36 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
         255 - ((originalAlpha << 1) + (originalAlpha >> 6));
 }
 
+// algorithm from wtc@
+static tilesAndThreads computeTiles(height, width) {
+  int imageArea, tiles, tilesLog2;
+  tilesAndThreads retval;
+
+  imageArea = width * height;
+
+  tiles = ceil(imageArea / MIN_TILE_AREA);
+  tiles = min(tiles, MAX_TILES);
+  tiles = min(tiles, MAX_THREADS);
+
+  tilesLog2 = floor(log10(tiles) / log10(2));
+
+  // If the image's width is greater than the height, use more tile columns
+  // than tile rows to make the tile size close to a square
+    
+  if (width >= height) {
+    retval.tileRowsLog2 = tilesLog2 / 2;
+    retval.tileColumnsLog2 = tilesLog2 - retval.tileRowsLog2;
+  } else {
+    retval.tileColumnsLog2 = tilesLog2 / 2;
+    retval.tileRowsLog2 = tilesLog2 - retval.tileColumnsLog2;
+  }
+
+  // It's good to have one thread per tile.
+  retval.threads = tiles;
+
+  return retval;
+}
+
 /* Check the result from an Avif function to see if it's an error.
    If so, decode the error and output it, and return true.
    Otherwise, return false.
@@ -440,6 +494,7 @@ static avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
 
   return io;
 }
+
 
 /*
  logic inspired by avifIOMemoryReaderRead() and avifIOFileReaderRead()
