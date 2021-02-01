@@ -22,6 +22,7 @@
 
 #ifdef HAVE_LIBAVIF
 #include "avif.h"
+#include "internal.h"
 
 /*
   Working defaults for encoding.
@@ -60,6 +61,7 @@ tilesAndThreads;
 
 /* Helper function signatures */
 
+static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed);
 static void destroyCtxAndAvifIO(avifIO *io);
 static avifIO *createAvifIOFromCtx(gdIOCtx * ctx);
 static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out);
@@ -67,9 +69,14 @@ static void destroyCtxAndAvifIO(avifIO *io);
 static avifBool isAvifError(avifResult result, char * msg);
 static int quality2Quantizer(int quality);
 static uint8_t convertTo8BitAlpha(uint8_t originalAlpha);
+static void setEncoderTilesAndThreads(avifEncoder * encoder, avifRGBImage * rgb);
 
 
-/*** DECODING FUNCTIONS ***/
+/*****************************************************************************
+ * 
+ *                            DECODING FUNCTIONS
+ * 
+ *****************************************************************************/
 
 /*
   Function: gdImageCreateFromAvif
@@ -89,7 +96,7 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha);
     A pointer to the new image.  This will need to be
     destroyed with <gdImageDestroy> once it is no longer needed.
 
-    On error, returns 0.
+    On error, returns NULL.
 */
 BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE * infile)
 {
@@ -216,15 +223,6 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
       }
     }
   }
-	
-//TODO: this is just here for testing. Delete it.
-  if (rgb.depth > 8) {
-    uint16_t * firstPixel = (uint16_t *) rgb.pixels;
-    printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]);
-  } else {
-    uint8_t * firstPixel = rgb.pixels;
-    printf(" * First pixel: RGBA(%u,%u,%u,%u)\n", firstPixel[0], firstPixel[1], firstPixel[2], firstPixel[3]);
-  }
 
   /* do not use gdFree here, in case gdFree/alloc is mapped to something else than libc */
 
@@ -240,8 +238,11 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
 }
 
 
-/*** ENCODING FUNCTIONS ***/
-
+/*****************************************************************************
+ * 
+ *                            ENCODING FUNCTIONS
+ * 
+ *****************************************************************************/
 
 BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE * outFile)
 {
@@ -306,6 +307,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
   avifRGBImage rgb;
   tilesAndThreads theTilesAndThreads;
   avifRWData avifOutput = AVIF_DATA_EMPTY;
+  avifBool failed = AVIF_FALSE;
 
   register uint32_t val;
   register uint8_t * p;
@@ -321,18 +323,19 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
 		return 1;
 	}
 
+  avifImage * avifIm = avifImageCreate(gdImageSX(im), gdImageSY(im), 8, DEFAULT_CHROMA_SUBSAMPLING);
+
   rgb.width = gdImageSX(im);
   rgb.height = gdImageSY(im);
   rgb.depth = 8;
   rgb.format = AVIF_RGB_FORMAT_RGBA;
   rgb.chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
   rgb.ignoreAlpha = AVIF_FALSE;
-
+  rgb.pixels = NULL;
   avifRGBImageAllocatePixels(&rgb); // this allocates memory, and sets rgb.rowBytes and rgb.pixels
 
   // Parse RGB data from the GD image, and copy it into the AVIF RGB image.
-  p = &rgb;
-
+  p = rgb.pixels;
   for (y = 0; y < rgb.height; y++) {
     for (x = 0; x < rgb.width; x++) {
       val = im->tpixels[y][x];
@@ -346,8 +349,8 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
     }
   }
 
-  result = avifImageRGBToYUV(im, &rgb);
-  if (isAvifError(result, "Could not convert image to YUV")) {
+  result = avifImageRGBToYUV(avifIm, &rgb);
+  if ((failed = isAvifError(result, "Could not convert image to YUV"))) {
     goto cleanup;
   }
 
@@ -357,41 +360,47 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
   int quantizerQuality = quality == DEFAULT_QUALITY ? 
                          DEFAULT_QUANTIZER : quality2Quantizer(quality);
 
-//TODO: should this be a pointer? should I be returning a struct or a reference?
-  theTilesAndThreads = computeTiles(rgb.height, rgb.width);
-
   encoder->minQuantizer = quantizerQuality;
   encoder->maxQuantizer = quantizerQuality;
   encoder->minQuantizerAlpha = quantizerQuality;
   encoder->maxQuantizerAlpha = quantizerQuality;
   encoder->speed = speed;
-  encoder->tileColsLog2 = theTilesAndThreads.tileColumnsLog2;
-  encoder->tileRowsLog2 = theTilesAndThreads.tileRowsLog2;
-  encoder->maxThreads = theTilesAndThreads.threads;
+  setEncoderTilesAndThreads(encoder, &rgb);
 
-  result = avifEncoderAddImage(encoder, im, 1, AVIF_ADD_IMAGE_FLAG_SINGLE); //TODO: why 1?
-  if (isAvifError(result, "Could not encode image")) {
+  result = avifEncoderAddImage(encoder, avifIm, 1, AVIF_ADD_IMAGE_FLAG_SINGLE); //TODO: why 1?
+  if ((failed = isAvifError(result, "Could not encode image"))) {
     goto cleanup;
   }
 
   result = avifEncoderFinish(encoder, &avifOutput);
-  if (isAvifError(result, "Could not finish encoding")) {
+  if ((failed = isAvifError(result, "Could not finish encoding"))) {
     goto cleanup;
   }
 
-  // Write the pixels to the GD ctx.
+  // Write the AVIF image bytes to the GD ctx.
   gdPutBuf(avifOutput.data, avifOutput.size, outfile);
 
   cleanup:
-    avifEncoderDestroy(encoder);
-    avifRWDataFree(&avifOutput); // TODO: only call if we assigned this
-    avifRGBImageFreePixels(&rgb); // TODO: only call if we assigned this
+    if (rgb.pixels) {
+      avifRGBImageFreePixels(&rgb);
+    }
 
-    return AVIF_TRUE; // well, only if we should
+    if (encoder) {
+      avifEncoderDestroy(encoder);
+    }
+
+    if (avifOutput.data) {
+      avifRWDataFree(&avifOutput);
+    }
+
+    return failed;
 }
 
-
-/*** HELPER FUNCTIONS ***/
+/*****************************************************************************
+ * 
+ *                            HELPER FUNCTIONS
+ * 
+ *****************************************************************************/
 
 /* Convert the quality param we expose to the quantity params used by libavif.
    The *Quantizer* params values can range from 0 to 63, with 0 = highest quality and 63 = worst.
@@ -426,33 +435,32 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
 }
 
 // algorithm from wtc@
-static tilesAndThreads computeTiles(height, width) {
-  int imageArea, tiles, tilesLog2;
-  tilesAndThreads retval;
 
-  imageArea = width * height;
+static void setEncoderTilesAndThreads(avifEncoder * encoder, avifRGBImage * rgb) {
+  int imageArea, tiles, tilesLog2;
+  int tileRowsLog2, tileColumnsLog2, maxThreads;
+
+  imageArea = rgb->width * rgb->height;
 
   tiles = ceil(imageArea / MIN_TILE_AREA);
-  tiles = min(tiles, MAX_TILES);
-  tiles = min(tiles, MAX_THREADS);
+  tiles = AVIF_MIN(tiles, MAX_TILES);
+  tiles = AVIF_MIN(tiles, MAX_THREADS);
 
   tilesLog2 = floor(log10(tiles) / log10(2));
 
   // If the image's width is greater than the height, use more tile columns
   // than tile rows to make the tile size close to a square
     
-  if (width >= height) {
-    retval.tileRowsLog2 = tilesLog2 / 2;
-    retval.tileColumnsLog2 = tilesLog2 - retval.tileRowsLog2;
+  if (rgb->width >= rgb->height) {
+    encoder->tileRowsLog2 = tilesLog2 / 2;
+    encoder->tileColsLog2 = tilesLog2 - encoder->tileRowsLog2;
   } else {
-    retval.tileColumnsLog2 = tilesLog2 / 2;
-    retval.tileRowsLog2 = tilesLog2 - retval.tileColumnsLog2;
+    encoder->tileColsLog2 = tilesLog2 / 2;
+    encoder->tileRowsLog2 = tilesLog2 - encoder->tileColsLog2;
   }
 
   // It's good to have one thread per tile.
-  retval.threads = tiles;
-
-  return retval;
+  encoder->maxThreads = tiles;
 }
 
 /* Check the result from an Avif function to see if it's an error.
