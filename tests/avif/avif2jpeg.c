@@ -7,7 +7,7 @@
 
 #include "gd.h"
 
-/* A short program which converts a .avif file into a .gd file - 
+/* A short program which converts a .avif file into a .jpg file - 
   just to get a little practice with the basic functionality.
  */
 
@@ -17,11 +17,11 @@ int main(int argc, char **argv)
 	FILE *in, *out;
 
 	if (argc != 3) {
-		fprintf(stderr, "Usage: aviftogd2 filename.avif filename.gd2\n");
+		fprintf(stderr, "Usage: avif2jpeg filename.avif filename.jpg\n");
 		exit(1);
 	}
 
-	printf("reading file %s\n", argv[1]);
+	printf("Reading infile %s\n", argv[1]);
 
 	in = fopen(argv[1], "rb");
 	if (!in) {
@@ -44,6 +44,8 @@ int main(int argc, char **argv)
 	}
 
 	gdImageJpeg(im, out, 75);
+
+  printf("Wrote oufile %s\n. Success!\n", argv[1]);
 
 	// gdImageGd(im, out);
 	fclose(out);
