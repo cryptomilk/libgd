@@ -1,6 +1,6 @@
 LIST(APPEND TESTS_FILES
-	avif2gd
-	gd2avif
+	avif2jpeg
+	jpeg2avif
 )
 
 ADD_GD_TESTS()
