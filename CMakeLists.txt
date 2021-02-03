@@ -22,13 +22,6 @@ OPTION(ENABLE_WEBP "Enable WebP support" 0)
 OPTION(ENABLE_AVIF "Enable AVIF support" 0)
 OPTION(ENABLE_RAQM "Enable RAQM support" 0)
 
-## temporarily hardcoded. TODO: remove these!
-SET(ENABLE_AVIF 1)
-SET(ENABLE_WEBP 1)
-SET(ENABLE_JPEG 1)
-SET(ENABLE_PNG 1)
-SET(BUILD_TEST 1)
-
 if (BUILD_TEST)
 	ENABLE_TESTING()
 endif(BUILD_TEST)
