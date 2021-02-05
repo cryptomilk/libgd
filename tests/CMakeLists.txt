@@ -17,7 +17,7 @@ if (BUILD_TEST)
 	include_directories (BEFORE ${GD_INCLUDE_DIR} "${GDTEST_SOURCE_DIR}" "${CMAKE_BINARY_DIR}" "${CMAKE_BINARY_DIR}/tests/gdtest")
 
 	SET(TESTS_DIRS
-	  avif
+		avif
 		bmp
 		fontconfig
 		freetype
