@@ -627,9 +627,9 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromWebp (FILE * inFile);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromWebpPtr (int size, void *data);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromWebpCtx (gdIOCtx * infile);
 
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE * inFile);
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE *inFile);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data);
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * infile);
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *infile);
 
 BGD_DECLARE(gdImagePtr) gdImageCreateFromTiff(FILE *inFile);
 BGD_DECLARE(gdImagePtr) gdImageCreateFromTiffCtx(gdIOCtx *infile);
@@ -1088,8 +1088,8 @@ BGD_DECLARE(void *) gdImageWebpPtr (gdImagePtr im, int *size);
 BGD_DECLARE(void *) gdImageWebpPtrEx (gdImagePtr im, int *size, int quantization);
 BGD_DECLARE(void) gdImageWebpCtx (gdImagePtr im, gdIOCtx * outfile, int quantization);
 
-BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE * outFile);
-BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE * outFile, int quality, int speed);
+BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE *outFile);
+BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE *outFile, int quality, int speed);
 BGD_DECLARE(void *) gdImageAvifPtr (gdImagePtr im, int *size);
 BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quality, int speed);
 BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed);

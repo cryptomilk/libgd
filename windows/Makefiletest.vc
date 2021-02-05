@@ -1,4 +1,5 @@
 TESTS=bmp\bmp_im2im \
+bmp\bmp_null \
 avif\avif2jpeg \
 avif\jpeg2avif \
 freetype\bug00132 \

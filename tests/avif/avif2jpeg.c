@@ -1,3 +1,8 @@
+/**
+ * A short program which converts a .avif file into a .jpg file - 
+ * just to get a little practice with the basic functionality.
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
@@ -6,10 +11,6 @@
 #include <stdlib.h>
 
 #include "gd.h"
-
-/* A short program which converts a .avif file into a .jpg file - 
-  just to get a little practice with the basic functionality.
- */
 
 int main(int argc, char **argv)
 {

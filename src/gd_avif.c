@@ -19,7 +19,7 @@
 #include "gdhelpers.h"
 
 #ifdef HAVE_LIBAVIF
-#include "avif.h"
+#include <avif/avif.h>
 #include "internal.h"
 // internal.h is only used for AVIF_MIN() and AVIF_CLAMP() macros
 
@@ -54,15 +54,15 @@
 
 /*** Helper function signatures ***/
 
-static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed);
+static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed);
 static void destroyCtxAndAvifIO(avifIO *io);
-static avifIO *createAvifIOFromCtx(gdIOCtx * ctx);
-static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out);
+static avifIO *createAvifIOFromCtx(gdIOCtx *ctx);
+static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, size_t size, avifROData *out);
 static void destroyCtxAndAvifIO(avifIO *io);
-static avifBool isAvifError(avifResult result, char * msg);
+static avifBool isAvifError(avifResult result, char *msg);
 static int quality2Quantizer(int quality);
 static uint8_t convertTo8BitAlpha(uint8_t originalAlpha);
-static void setEncoderTilesAndThreads(avifEncoder * encoder, avifRGBImage * rgb);
+static void setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb);
 
 
 /*****************************************************************************
@@ -106,7 +106,7 @@ static void setEncoderTilesAndThreads(avifEncoder * encoder, avifRGBImage * rgb)
 
     On error, returns 0.
 */
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE * infile)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE *infile)
 {
   gdImagePtr image;
   gdIOCtx *ctx = gdNewFileCtx(infile);
@@ -169,7 +169,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data)
 
     ctx              - a gdIOCtx struct
 */
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 {
   int x, y;
   uint8_t *p8; 
@@ -298,7 +298,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
     Nothing.
 */
 
-BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE * outFile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE *outFile, int quality, int speed)
 {
 	gdIOCtx *out = gdNewFileCtx(outFile);
 
@@ -310,15 +310,15 @@ BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE * outFile, int quality, int
 	out->gd_free(out);
 }
 
-BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE * outFile)
+BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE *outFile)
 {
 	return gdImageAvifEx(im, outFile, DEFAULT_QUALITY, AVIF_SPEED_DEFAULT);
 }
 
 BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quality, int speed)
 {
-	void * rv;
-	gdIOCtx * out = gdNewDynamicCtx(NEW_DYNAMIC_CTX_SIZE, NULL);
+	void *rv;
+	gdIOCtx *out = gdNewDynamicCtx(NEW_DYNAMIC_CTX_SIZE, NULL);
 
 	if (out == NULL) {
 		return NULL;
@@ -340,7 +340,7 @@ BGD_DECLARE(void *) gdImageAvifPtr (gdImagePtr im, int *size)
 }
 
 
-BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
 {
   _gdImageAvifCtx(im, outfile, quality, speed);
 }
@@ -353,7 +353,7 @@ BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality,
 
    This function returns 0 on success, or 1 on failure.
  */
-static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed)
+static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
 {
   avifResult result;
   avifRGBImage rgb;
@@ -361,7 +361,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
   avifBool failed = AVIF_FALSE;
 
   uint32_t val;
-  uint8_t * p;
+  uint8_t *p;
   uint8_t a;
   int x, y;
 
@@ -374,7 +374,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
 		return 1;
 	}
 
-  avifImage * avifIm = avifImageCreate(gdImageSX(im), gdImageSY(im), 8, DEFAULT_CHROMA_SUBSAMPLING);
+  avifImage *avifIm = avifImageCreate(gdImageSX(im), gdImageSY(im), 8, DEFAULT_CHROMA_SUBSAMPLING);
 
   rgb.width = gdImageSX(im);
   rgb.height = gdImageSY(im);
@@ -407,7 +407,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, 
 
   // Encode the image in AVIF format
 
-  avifEncoder * encoder = avifEncoderCreate();
+  avifEncoder *encoder = avifEncoderCreate();
   int quantizerQuality = quality == DEFAULT_QUALITY ? 
                          DEFAULT_QUANTIZER : quality2Quantizer(quality);
 
@@ -490,7 +490,7 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
    This is subject to change as research continues.
  */
 
-static void setEncoderTilesAndThreads(avifEncoder * encoder, avifRGBImage * rgb) {
+static void setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb) {
   int imageArea, tiles, tilesLog2;
   int tileRowsLog2, tileColumnsLog2, maxThreads;
 
@@ -522,7 +522,7 @@ static void setEncoderTilesAndThreads(avifEncoder * encoder, avifRGBImage * rgb)
    If so, decode the error and output it, and return true.
    Otherwise, return false.
 */
-static avifBool isAvifError(avifResult result, char * msg) {
+static avifBool isAvifError(avifResult result, char *msg) {
   if (result != AVIF_RESULT_OK) {
     gd_error("avif error: %s: %s", msg, avifResultToString(result));
     return GD_TRUE;
@@ -540,7 +540,7 @@ static avifBool isAvifError(avifResult result, char * msg) {
 
 //TODO: can we get sizeHint somehow?
 
-static avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
+static avifIO *createAvifIOFromCtx(gdIOCtx *ctx) {
   avifIO *io;
 
   io = (avifIO *) gdMalloc(sizeof(avifIO));
@@ -573,7 +573,7 @@ static avifIO *createAvifIOFromCtx(gdIOCtx * ctx) {
   Of course these AVIF codes shouldn't be returned by any top-level GD function.
 */
 
-static avifResult readFromCtx(avifIO * io, uint32_t readFlags, uint64_t offset, size_t size, avifROData * out)
+static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, size_t size, avifROData *out)
 {
   void *dataBuf = NULL;
   gdIOCtx *ctx = (gdIOCtx *) io->data;
@@ -624,7 +624,7 @@ static void _noAvifError(void)
   return NULL;
 }
 
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE * ctx)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE *ctx)
 {
   return _noAvifError();
 }
@@ -634,22 +634,22 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data)
   return _noAvifError();
 }
 
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx * ctx)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx * outfile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE * outFile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE *outFile, int quality, int speed)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE * outFile)
+BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE *outFile)
 {
   return _noAvifError();
 }
