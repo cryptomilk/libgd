@@ -40,11 +40,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# TODO: should we remove ../libavif/include path?
 find_path(AVIF_INCLUDE_DIR avif.h
-../libavif/include/avif
-/usr/local/include/avif
-/usr/include/avif
+  /usr/local/include/avif
+  /usr/include/avif
 )
 
 # Note that another AVIF encoder could be used here instead. libavif supports a few.
@@ -53,8 +51,8 @@ set (AVIF_ENCODER aom)
 set(AVIF_NAMES ${AVIF_NAMES} avif)
 find_library(AVIF_LIBRARY
   NAMES ${AVIF_NAMES}
-  PATHS "${PROJECT_SOURCE_DIR}/../deps/lib" /usr/lib64 /usr/lib /usr/local/lib
-  )
+  PATHS /usr/lib64 /usr/lib /usr/local/lib
+)
 
 if (AVIF_LIBRARY AND AVIF_INCLUDE_DIR)
   set(AVIF_INCLUDE_DIR ${AVIF_INCLUDE_DIR})
@@ -62,10 +60,9 @@ if (AVIF_LIBRARY AND AVIF_INCLUDE_DIR)
   set(AVIF_FOUND "YES")
 endif (AVIF_LIBRARY AND AVIF_INCLUDE_DIR)
 
-# TODO: we'll need to put the libavif encoder library somewhere more logical.
 find_library(AVIF_ENCODER_LIBRARY
   NAMES aom
-  PATHS "${PROJECT_SOURCE_DIR}/../libavif/ext/${AVIF_ENCODER}/build.libavif" /usr/lib64 /usr/lib /usr/local/lib
+  PATHS /usr/lib64 /usr/lib /usr/local/lib
 )
 
 if (AVIF_ENCODER_LIBRARY)
