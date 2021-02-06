@@ -38,31 +38,172 @@
 #define DEFAULT_QUALITY -1
 #define DEFAULT_SPEED AVIF_SPEED_DEFAULT
 
-// This initial size for the gdIOCtx is standard among GD image conversion functions
+// This initial size for the gdIOCtx is standard among GD image conversion functions.
 #define NEW_DYNAMIC_CTX_SIZE 2048
 
 // Our quality param ranges from 0 to 100.
 // To calculate quality, we convert from AVIF's quantizer scale, which runs from 63 to 0.
 #define MAX_QUALITY 100
 
-// For computing the number of tiles and threads to use during encoding
-// Maximum threads are from libavif/contrib/gkd-pixbuf/loader.c
+// These constants are for computing the number of tiles and threads to use during encoding.
+// Maximum threads are from libavif/contrib/gkd-pixbuf/loader.c.
 #define MIN_TILE_AREA (512 * 512)
 #define MAX_TILES 6
 #define MAX_THREADS 64
 
 
-/*** Helper function signatures ***/
+/*** Helper functions ***/
 
-static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed);
-static void destroyCtxAndAvifIO(avifIO *io);
-static avifIO *createAvifIOFromCtx(gdIOCtx *ctx);
-static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, size_t size, avifROData *out);
-static void destroyCtxAndAvifIO(avifIO *io);
-static avifBool isAvifError(avifResult result, char *msg);
-static int quality2Quantizer(int quality);
-static uint8_t convertTo8BitAlpha(uint8_t originalAlpha);
-static void setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb);
+/* Convert the quality param we expose to the quantity params used by libavif.
+   The *Quantizer* params values can range from 0 to 63, with 0 = highest quality and 63 = worst.
+   We make the scale 0-100, and we reverse this, so that 0 = worst quality and 100 = highest.
+
+   Values below 0 are set to 0, and values below MAX_QUALITY are set to MAX_QUALITY.
+*/
+static int quality2Quantizer(int quality) {
+  int clampedQuality = AVIF_CLAMP(quality, 0, MAX_QUALITY);
+
+  float scaleFactor = (float) AVIF_QUANTIZER_WORST_QUALITY / (float) MAX_QUALITY;
+
+  return round(scaleFactor * (MAX_QUALITY - clampedQuality));
+}
+
+/*
+  From gd_png.c:
+    convert the 7-bit alpha channel to an 8-bit alpha channel.
+    We do a little bit-flipping magic, repeating the MSB
+    as the LSB, to ensure that 0 maps to 0 and
+    127 maps to 255. We also have to invert to match
+    PNG's convention in which 255 is opaque. 
+*/
+static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
+  return originalAlpha == 127 ? 
+        0 : 
+        255 - ((originalAlpha << 1) + (originalAlpha >> 6));
+}
+
+/*
+   As of February 2021, this algorithm reflects the latest research on how many tiles
+   and threads to include for a given image size.
+   This is subject to change as research continues.
+ */
+static void setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb) {
+  int imageArea, tiles, tilesLog2;
+  int tileRowsLog2, tileColumnsLog2, maxThreads;
+
+  imageArea = rgb->width * rgb->height;
+
+  tiles = ceil(imageArea / MIN_TILE_AREA);
+  tiles = AVIF_MIN(tiles, MAX_TILES);
+  tiles = AVIF_MIN(tiles, MAX_THREADS);
+
+  tilesLog2 = floor(log10(tiles) / log10(2));
+
+  // If the image's width is greater than the height, use more tile columns
+  // than tile rows to make the tile size close to a square.
+    
+  if (rgb->width >= rgb->height) {
+    encoder->tileRowsLog2 = tilesLog2 / 2;
+    encoder->tileColsLog2 = tilesLog2 - encoder->tileRowsLog2;
+  } else {
+    encoder->tileColsLog2 = tilesLog2 / 2;
+    encoder->tileRowsLog2 = tilesLog2 - encoder->tileColsLog2;
+  }
+
+  // It's good to have one thread per tile.
+  encoder->maxThreads = tiles;
+}
+
+/*
+   Check the result from an Avif function to see if it's an error.
+   If so, decode the error and output it, and return true.
+   Otherwise, return false.
+*/
+static avifBool isAvifError(avifResult result, char *msg) {
+  if (result != AVIF_RESULT_OK) {
+    gd_error("avif error: %s: %s", msg, avifResultToString(result));
+    return GD_TRUE;
+  }
+
+  return GD_FALSE;
+}
+
+/* Set up an avifIO object.
+   The functions in the gdIOCtx struct may point either to a file or a memory buffer.
+   To us, that's immaterial.
+   Our task is simply to assign avifIO functions to the proper functions from gdIOCtx.
+   The destroy function needs to destroy the avifIO object and anything else it uses.
+*/
+
+//TODO: can we get sizeHint somehow?
+static avifIO *createAvifIOFromCtx(gdIOCtx *ctx) {
+  avifIO *io;
+
+  io = (avifIO *) gdMalloc(sizeof(avifIO));
+	if (io == NULL) 
+		return NULL;
+
+  io->read = readFromCtx;
+  io->write = NULL; // this function is currently unused; see avif.h
+  io->destroy = destroyCtxAndAvifIO;
+  io->sizeHint = 0; // sadly, we don't get this information from the gdIOCtx.
+  io->persistent = GD_FALSE; // TODO: This seems like the safe thing to do, but I don't know for sure. This is less efficient, because it means AVIF will make copies of all buffers.
+  io->data = ctx;
+
+  return io;
+}
+
+/*
+  <readfromCtx> implements the avifIOReadFunc interface by calling the relevant functions
+  in the gdIOCtx. Our logic is inspired by avifIOMemoryReaderRead() and avifIOFileReaderRead().
+  We don't know whether we're reading from a file or from memory. We don't have to know,
+  since we rely on the helper functions in the gdIOCtx.
+  We assume we've stashed the gdIOCtx in io->data, as we do in createAvifIOFromCtx().
+
+  We ignore readFlags, just as the avifIO*ReaderRead() functions do.
+
+  If there's a problem, this returns an avifResult error.
+  If things go well, return AVIF_RESULT_OK.
+  Of course these AVIF codes shouldn't be returned by any top-level GD function.
+*/
+static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, size_t size, avifROData *out)
+{
+  void *dataBuf = NULL;
+  gdIOCtx *ctx = (gdIOCtx *) io->data;
+
+  //TODO: if we set sizeHint, this will be more efficient.
+
+  if (offset > LONG_MAX || size < 0) 
+    return AVIF_RESULT_IO_ERROR;
+
+  // Try to seek offset bytes forward. If we pass the end of the buffer, throw an error.
+  if (!(ctx->seek(ctx, offset))) 
+    return AVIF_RESULT_IO_ERROR;
+
+  dataBuf = gdRealloc(dataBuf, size);
+  if (!dataBuf) {
+    gd_error("avif decode: realloc failed");
+    return AVIF_RESULT_UNKNOWN_ERROR;
+  }
+
+  // Read the number of bytes requested. 
+  // If getBuf() returns a negative value, that means there was an error.
+  int charsRead = ctx->getBuf(ctx, dataBuf, size);
+  if (charsRead < 0) 
+    return AVIF_RESULT_IO_ERROR;
+
+  out->data = dataBuf;
+  out->size = charsRead;
+  return AVIF_RESULT_OK;  // or AVIF_RESULT_TRUNCATED_DATA ....
+}
+
+// avif.h says this is optional, but it seemed easy to implement.
+static void destroyCtxAndAvifIO(struct avifIO *io) {
+  gdIOCtx *ctx = io->data; // TODO: should I have cast this?
+
+  ctx->gd_free(ctx);
+  avifFree(io);
+}
 
 
 /*****************************************************************************
@@ -106,14 +247,13 @@ static void setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb);
 
     On error, returns 0.
 */
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE *infile)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif(FILE *infile)
 {
   gdImagePtr image;
   gdIOCtx *ctx = gdNewFileCtx(infile);
 
-  if (!ctx) {
+  if (!ctx)
     return GD_FALSE;
-  }
 
   image = gdImageCreateFromAvifCtx(ctx);
   // ctx->gd_free(ctx);
@@ -131,7 +271,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE *infile)
     size            - size of Avif data in bytes.
     data            - pointer to Avif data.
 */
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr(int size, void *data)
 {
   gdImagePtr image;
   gdIOCtx *ctx = gdNewDynamicCtxEx(size, data, 0);
@@ -188,24 +328,21 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
   avifDecoderSetIO(decoder, io);
 
   result = avifDecoderParse(decoder);
-  if (isAvifError(result, "Could not parse image")) {
+  if (isAvifError(result, "Could not parse image")) 
     goto cleanup;
-  }
 
   // Note again that, for an image sequence, we read only the first image, ignoring the rest.
   result = avifDecoderNextImage(decoder);
-  if (isAvifError(result, "Could not decode image")) {
+  if (isAvifError(result, "Could not decode image")) 
     goto cleanup;
-  }
 
   // Set up the avifRGBImage. Use default settings unless there's demand to override these.
   avifRGBImageSetDefaults(&rgb, decoder->image);
   avifRGBImageAllocatePixels(&rgb);
 
   result = avifImageYUVToRGB(decoder->image, &rgb);
-  if (isAvifError(result, "gd-avif error: Conversion from YUV to RGB failed")) {
+  if (isAvifError(result, "gd-avif error: Conversion from YUV to RGB failed")) 
     goto cleanup;
-  }
 
   im = gdImageCreateTrueColor(decoder->image->width, decoder->image->height);
 	if (!im) {
@@ -240,7 +377,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
     }
   }
 
-  /* do not use gdFree here, in case gdFree/alloc is mapped to something else than libc */
+  /* do not use gdFree here, in case gdFree/alloc is mapped to something else than libc. */
 
 //TODO: decide what truly has to be freed
   cleanup:
@@ -289,7 +426,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 
   Notes on parameters: 
     quality - If quality = -1, we use a default quality as defined in DEFAULT_QUALITY.
-      For information on how we convert this quality to libavif's quantity param, see <quality2Quantizer>
+      For information on how we convert this quality to libavif's quantity param, see <quality2Quantizer>.
 
     speed - At slower speeds, encoding may be quite slow. Use judiciously.
 
@@ -298,35 +435,32 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
     Nothing.
 */
 
-BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE *outFile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifEx(gdImagePtr im, FILE *outFile, int quality, int speed)
 {
 	gdIOCtx *out = gdNewFileCtx(outFile);
 
-	if (out == NULL) {
+	if (out == NULL) 
 		return;
-	}
 
 	gdImageAvifCtx(im, out, quality, speed);
 	out->gd_free(out);
 }
 
-BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE *outFile)
+BGD_DECLARE(void) gdImageAvif(gdImagePtr im, FILE *outFile)
 {
 	return gdImageAvifEx(im, outFile, DEFAULT_QUALITY, AVIF_SPEED_DEFAULT);
 }
 
-BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quality, int speed)
+BGD_DECLARE(void *) gdImageAvifPtrEx(gdImagePtr im, int *size, int quality, int speed)
 {
 	void *rv;
 	gdIOCtx *out = gdNewDynamicCtx(NEW_DYNAMIC_CTX_SIZE, NULL);
 
-	if (out == NULL) {
+	if (out == NULL) 
 		return NULL;
-	}
 
-	if (_gdImageAvifCtx(im, out, quality, speed)) {
-		rv = NULL;
-	} else {
+	if (_gdImageAvifCtx(im, out, quality, speed)) 
+		rv = NULL; else {
 		rv = gdDPExtractData(out, size);
 	}
 
@@ -334,13 +468,13 @@ BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quality, int
 	return rv;
 }
 
-BGD_DECLARE(void *) gdImageAvifPtr (gdImagePtr im, int *size)
+BGD_DECLARE(void *) gdImageAvifPtr(gdImagePtr im, int *size)
 {
 	return gdImageAvifPtrEx(im, size, DEFAULT_QUALITY, AVIF_SPEED_DEFAULT);
 }
 
 
-BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
 {
   _gdImageAvifCtx(im, outfile, quality, speed);
 }
@@ -349,11 +483,11 @@ BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, 
    We need this underscored function because gdImageAvifCtx() can't return anything.
    And our functions that operate on a memory buffer need to know whether the encoding has succeeded.
 
-   If we're passed the DEFAULT_QUALITY of -1, set the quantizer params to DEFAULT_QUANTIZER
+   If we're passed the DEFAULT_QUALITY of -1, set the quantizer params to DEFAULT_QUANTIZER.
 
    This function returns 0 on success, or 1 on failure.
  */
-static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
+static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
 {
   avifResult result;
   avifRGBImage rgb;
@@ -365,9 +499,8 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, i
   uint8_t a;
   int x, y;
 
-	if (im == NULL) {
+	if (im == NULL) 
 		return 1;
-	}
 
 	if (!gdImageTrueColor(im)) {
 		gd_error("avif doesn't support palette images");
@@ -383,7 +516,7 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, i
   rgb.chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
   rgb.ignoreAlpha = AVIF_FALSE;
   rgb.pixels = NULL;
-  avifRGBImageAllocatePixels(&rgb); // this allocates memory, and sets rgb.rowBytes and rgb.pixels
+  avifRGBImageAllocatePixels(&rgb); // this allocates memory, and sets rgb.rowBytes and rgb.pixels.
 
   // Parse RGB data from the GD image, and copy it into the AVIF RGB image.
   p = rgb.pixels;
@@ -401,11 +534,10 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, i
   }
 
   result = avifImageRGBToYUV(avifIm, &rgb);
-  if ((failed = isAvifError(result, "Could not convert image to YUV"))) {
+  if ((failed = isAvifError(result, "Could not convert image to YUV"))) 
     goto cleanup;
-  }
 
-  // Encode the image in AVIF format
+  // Encode the image in AVIF format.
 
   avifEncoder *encoder = avifEncoderCreate();
   int quantizerQuality = quality == DEFAULT_QUALITY ? 
@@ -419,202 +551,29 @@ static avifBool _gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, i
   setEncoderTilesAndThreads(encoder, &rgb);
 
   result = avifEncoderAddImage(encoder, avifIm, 1, AVIF_ADD_IMAGE_FLAG_SINGLE); //TODO: why 1?
-  if ((failed = isAvifError(result, "Could not encode image"))) {
+  if ((failed = isAvifError(result, "Could not encode image"))) 
     goto cleanup;
-  }
 
   result = avifEncoderFinish(encoder, &avifOutput);
-  if ((failed = isAvifError(result, "Could not finish encoding"))) {
+  if ((failed = isAvifError(result, "Could not finish encoding"))) 
     goto cleanup;
-  }
 
   // Write the AVIF image bytes to the GD ctx.
 
   gdPutBuf(avifOutput.data, avifOutput.size, outfile);
 
   cleanup:
-    if (rgb.pixels) {
+    if (rgb.pixels) 
       avifRGBImageFreePixels(&rgb);
-    }
 
-    if (encoder) {
+    if (encoder) 
       avifEncoderDestroy(encoder);
-    }
 
-    if (avifOutput.data) {
+    if (avifOutput.data) 
       avifRWDataFree(&avifOutput);
-    }
 
     return failed;
 }
-
-/*****************************************************************************
- * 
- *                            HELPER FUNCTIONS
- * 
- *****************************************************************************/
-
-/* Convert the quality param we expose to the quantity params used by libavif.
-   The *Quantizer* params values can range from 0 to 63, with 0 = highest quality and 63 = worst.
-   We make the scale 0-100, and we reverse this, so that 0 = worst quality and 100 = highest.
-
-   Values below 0 are set to 0, and values below MAX_QUALITY are set to MAX_QUALITY.
-*/
-
-static int quality2Quantizer(int quality) {
-  int clampedQuality = AVIF_CLAMP(quality, 0, MAX_QUALITY);
-
-  float scaleFactor = (float) AVIF_QUANTIZER_WORST_QUALITY / (float) MAX_QUALITY;
-
-  return round(scaleFactor * (MAX_QUALITY - clampedQuality));
-}
-
-/*
-  From gd_png.c:
-    convert the 7-bit alpha channel to an 8-bit alpha channel.
-    We do a little bit-flipping magic, repeating the MSB
-    as the LSB, to ensure that 0 maps to 0 and
-    127 maps to 255. We also have to invert to match
-    PNG's convention in which 255 is opaque. 
-*/
-
-static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
-  return originalAlpha == 127 ? 
-        0 : 
-        255 - ((originalAlpha << 1) + (originalAlpha >> 6));
-}
-
-/*
-   As of February 2021, this algorithm reflects the latest research on how many tiles
-   and threads to include for a given image size.
-   This is subject to change as research continues.
- */
-
-static void setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb) {
-  int imageArea, tiles, tilesLog2;
-  int tileRowsLog2, tileColumnsLog2, maxThreads;
-
-  imageArea = rgb->width * rgb->height;
-
-  tiles = ceil(imageArea / MIN_TILE_AREA);
-  tiles = AVIF_MIN(tiles, MAX_TILES);
-  tiles = AVIF_MIN(tiles, MAX_THREADS);
-
-  tilesLog2 = floor(log10(tiles) / log10(2));
-
-  // If the image's width is greater than the height, use more tile columns
-  // than tile rows to make the tile size close to a square
-    
-  if (rgb->width >= rgb->height) {
-    encoder->tileRowsLog2 = tilesLog2 / 2;
-    encoder->tileColsLog2 = tilesLog2 - encoder->tileRowsLog2;
-  } else {
-    encoder->tileColsLog2 = tilesLog2 / 2;
-    encoder->tileRowsLog2 = tilesLog2 - encoder->tileColsLog2;
-  }
-
-  // It's good to have one thread per tile.
-  encoder->maxThreads = tiles;
-}
-
-/*
-   Check the result from an Avif function to see if it's an error.
-   If so, decode the error and output it, and return true.
-   Otherwise, return false.
-*/
-static avifBool isAvifError(avifResult result, char *msg) {
-  if (result != AVIF_RESULT_OK) {
-    gd_error("avif error: %s: %s", msg, avifResultToString(result));
-    return GD_TRUE;
-  }
-
-  return GD_FALSE;
-}
-
-/* Set up an avifIO object.
-   The functions in the gdIOCtx struct may point either to a file or a memory buffer.
-   To us, that's immaterial.
-   Our task is simply to assign avifIO functions to the proper functions from gdIOCtx.
-   The destroy function needs to destroy the avifIO object and anything else it uses.
-*/
-
-//TODO: can we get sizeHint somehow?
-
-static avifIO *createAvifIOFromCtx(gdIOCtx *ctx) {
-  avifIO *io;
-
-  io = (avifIO *) gdMalloc(sizeof(avifIO));
-	if (io == NULL) {
-		return NULL;
-	}
-
-  io->read = readFromCtx;
-  io->write = NULL; // this function is currently unused; see avif.h
-  io->destroy = destroyCtxAndAvifIO;
-  io->sizeHint = 0; // sadly, we don't get this information from the gdIOCtx
-  io->persistent = GD_FALSE; // TODO: This seems like the safe thing to do, but I don't know for sure. This is less efficient, because it means AVIF will make copies of all buffers.
-  io->data = ctx;
-
-  return io;
-}
-
-
-/*
-  <readfromCtx> implements the avifIOReadFunc interface by calling the relevant functions
-  in the gdIOCtx. Our logic is inspired by avifIOMemoryReaderRead() and avifIOFileReaderRead().
-  We don't know whether we're reading from a file or from memory. We don't have to know,
-  since we rely on the helper functions in the gdIOCtx.
-  We assume we've stashed the gdIOCtx in io->data, as we do in createAvifIOFromCtx().
-
-  We ignore readFlags, just as the avifIO*ReaderRead() functions do.
-
-  If there's a problem, this returns an avifResult error.
-  If things go well, return AVIF_RESULT_OK.
-  Of course these AVIF codes shouldn't be returned by any top-level GD function.
-*/
-
-static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, size_t size, avifROData *out)
-{
-  void *dataBuf = NULL;
-  gdIOCtx *ctx = (gdIOCtx *) io->data;
-
-  //TODO: if we set sizeHint, this will be more efficient.
-
-  if (offset > LONG_MAX || size < 0) {
-    return AVIF_RESULT_IO_ERROR;
-  }
-
-  // Try to seek offset bytes forward. If we pass the end of the buffer, throw an error.
-  if (!(ctx->seek(ctx, offset))) {
-    return AVIF_RESULT_IO_ERROR;
-  }
-
-  dataBuf = gdRealloc(dataBuf, size);
-  if (!dataBuf) {
-    gd_error("avif decode: realloc failed");
-    return AVIF_RESULT_UNKNOWN_ERROR;
-  }
-
-  // Read the number of bytes requested. 
-  // If getBuf() returns a negative value, that means there was an error.
-  int charsRead = ctx->getBuf(ctx, dataBuf, size);
-  if (charsRead < 0) {
-    return AVIF_RESULT_IO_ERROR;
-  }
-
-  out->data = dataBuf;
-  out->size = charsRead;
-  return AVIF_RESULT_OK;  // or AVIF_RESULT_TRUNCATED_DATA ....
-}
-
-// avif.h says this is optional, but it seemed easy to implement.
-static void destroyCtxAndAvifIO(struct avifIO *io) {
-  gdIOCtx *ctx = io->data; // TODO: should I have cast this?
-
-  ctx->gd_free(ctx);
-  avifFree(io);
-}
-
 
 #else /* !HAVE_LIBAVIF */
 
@@ -624,42 +583,42 @@ static void _noAvifError(void)
   return NULL;
 }
 
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif (FILE *ctx)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvif(FILE *ctx)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr (int size, void *data)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr(int size, void *data)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
+BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx(gdIOCtx *ctx)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void) gdImageAvifCtx (gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, int speed)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void) gdImageAvifEx (gdImagePtr im, FILE *outFile, int quality, int speed)
+BGD_DECLARE(void) gdImageAvifEx(gdImagePtr im, FILE *outFile, int quality, int speed)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void) gdImageAvif (gdImagePtr im, FILE *outFile)
+BGD_DECLARE(void) gdImageAvif(gdImagePtr im, FILE *outFile)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void *) gdImageAvifPtr (gdImagePtr im, int *size)
+BGD_DECLARE(void *) gdImageAvifPtr(gdImagePtr im, int *size)
 {
   return _noAvifError();
 }
 
-BGD_DECLARE(void *) gdImageAvifPtrEx (gdImagePtr im, int *size, int quality, int speed)
+BGD_DECLARE(void *) gdImageAvifPtrEx(gdImagePtr im, int *size, int quality, int speed)
 {
   return _noAvifError();
 }
