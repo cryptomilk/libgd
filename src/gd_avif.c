@@ -456,13 +456,14 @@ BGD_DECLARE(void *) gdImageAvifPtrEx(gdImagePtr im, int *size, int quality, int 
 	void *rv;
 	gdIOCtx *out = gdNewDynamicCtx(NEW_DYNAMIC_CTX_SIZE, NULL);
 
-	if (out == NULL) 
+	if (out == NULL) {
 		return NULL;
-
-	if (_gdImageAvifCtx(im, out, quality, speed)) 
-		rv = NULL; else {
-		rv = gdDPExtractData(out, size);
 	}
+
+	if (_gdImageAvifCtx(im, out, quality, speed))
+		rv = NULL;
+  else
+		rv = gdDPExtractData(out, size);
 
 	out->gd_free(out);
 	return rv;

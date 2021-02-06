@@ -291,7 +291,7 @@ BGD_DECLARE(void) gdImageWebpEx (gdImagePtr im, FILE * outFile, int quality)
 	if (out == NULL) {
 		return;
 	}
-	_gdImageWebpCtx(im, out, quality);
+	gdImageWebpCtx(im, out, quality);
 	out->gd_free(out);
 }
 
@@ -315,7 +315,7 @@ BGD_DECLARE(void) gdImageWebp (gdImagePtr im, FILE * outFile)
 	if (out == NULL) {
 		return;
 	}
-	_gdImageWebpCtx(im, out, -1);
+	gdImageWebpCtx(im, out, -1);
 	out->gd_free(out);
 }
 
