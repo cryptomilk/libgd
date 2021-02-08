@@ -46,7 +46,7 @@ int main(int argc, char **argv)
 
 	gdImageJpeg(im, out, 75);
 
-	printf("Wrote oufile %s\n. Success!\n", argv[1]);
+	printf("Wrote outfile %s.\n", argv[2]);
 
 	// gdImageGd(im, out);
 	fclose(out);

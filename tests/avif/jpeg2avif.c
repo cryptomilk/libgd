@@ -46,7 +46,7 @@ int main(int argc, char **argv)
 
 	gdImageAvif(im, out);
 
-  printf("Wrote oufile %s\n. Success!\n", argv[1]);
+  printf("Wrote outfile %s.\n", argv[2]);
 
 	// gdImageGd(im, out);
 	fclose(out);

@@ -54,6 +54,9 @@
 /* Define if you have webp */
 #cmakedefine HAVE_LIBWEBP
 
+/* Define if you have avif */
+#cmakedefine HAVE_LIBAVIF
+
 /* Define if you have xpm */
 #cmakedefine HAVE_LIBXPM
 
