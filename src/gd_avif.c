@@ -50,7 +50,7 @@
 // These constants are for computing the number of tiles and threads to use during encoding.
 // Maximum threads are from libavif/contrib/gkd-pixbuf/loader.c.
 #define MIN_TILE_AREA (512 * 512)
-#define MAX_TILES 64
+#define MAX_TILES 8
 #define MAX_THREADS 64
 
 
