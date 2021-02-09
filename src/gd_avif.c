@@ -92,7 +92,7 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
 	 Returns false if there was an error, true if all was well.
  */
 static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb) {
-	int imageArea, tiles, tilesLog2;
+	int imageArea, tiles, tilesLog2, encoderTiles;
 	int tileRowsLog2, tileColumnsLog2, maxThreads;
 
 	if (overflow2(rgb->width, rgb->height))
@@ -103,6 +103,8 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 	tiles = (int) ceil((double) imageArea / MIN_TILE_AREA);
 	tiles = MIN(tiles, MAX_TILES);
 	tiles = MIN(tiles, MAX_THREADS);
+
+	// The number of tiles in any dimension will always be a power of 2. We can only specify log(2)tiles.
 
 	tilesLog2 = floor(log10(tiles) / log10(2));
 
@@ -118,7 +120,8 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 	}
 
 	// It's good to have one thread per tile.
-	encoder->maxThreads = tiles;
+	encoderTiles = (int) (pow(2, encoder->tileRowsLog2) * pow(2, encoder->tileColsLog2));
+	encoder->maxThreads = encoderTiles;
 
 	return AVIF_TRUE;
 }
