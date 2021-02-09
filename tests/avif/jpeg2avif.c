@@ -44,11 +44,12 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	fprintf(stderr, "Encoding...\n");
+
 	gdImageAvif(im, out);
 
   printf("Wrote outfile %s.\n", argv[2]);
 
-	// gdImageGd(im, out);
 	fclose(out);
 	gdImageDestroy(im);
 

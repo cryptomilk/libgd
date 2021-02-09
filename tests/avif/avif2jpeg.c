@@ -48,7 +48,6 @@ int main(int argc, char **argv)
 
 	printf("Wrote outfile %s.\n", argv[2]);
 
-	// gdImageGd(im, out);
 	fclose(out);
 	gdImageDestroy(im);
 
