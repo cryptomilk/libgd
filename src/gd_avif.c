@@ -50,7 +50,7 @@
 // These constants are for computing the number of tiles and threads to use during encoding.
 // Maximum threads are from libavif/contrib/gkd-pixbuf/loader.c.
 #define MIN_TILE_AREA (512 * 512)
-#define MAX_TILES 6
+#define MAX_TILES 64
 #define MAX_THREADS 64
 
 
@@ -100,7 +100,7 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 	
 	imageArea = rgb->width * rgb->height;
 
-	tiles = ceil(imageArea / MIN_TILE_AREA);
+	tiles = (int) ceil((double) imageArea / MIN_TILE_AREA);
 	tiles = MIN(tiles, MAX_TILES);
 	tiles = MIN(tiles, MAX_THREADS);
 
@@ -516,7 +516,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	encoder->maxQuantizerAlpha = quantizerQuality;
 	encoder->speed = speed;
 
-	failed = setEncoderTilesAndThreads(encoder, &rgb);
+	failed = !setEncoderTilesAndThreads(encoder, &rgb);
 	if (failed)
 		goto cleanup;
 
