@@ -1,6 +1,11 @@
+if HAVE_LIBAVIF
+if HAVE_LIBJPEG
 libgd_test_programs += \
 	avif/avif2jpeg \
 	avif/jpeg2avif
+	avif/png2avif
+endif
+endif
 
 EXTRA_DIST += \
 	avif/CMakeLists.txt

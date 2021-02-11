@@ -2,6 +2,8 @@
  * File: AVIF IO
  *
  * Read and write AVIF images using libavif (https://github.com/AOMediaCodec/libavif) .
+ * Currently, the only ICC profile we support is sRGB. 
+ * Since that's what web browsers use, it's sufficient for now.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -27,18 +29,22 @@
 
 /*
 	Define defaults for encoding images:
-		DEFAULT_CHROMA_SUBSAMPLING: 4:2:0 is commonly used for Chroma subsampling.
-		DEFAULT_MIN_QUANTIZER, DEFAULT_MAX_QUANTIZER: 
+		CHROMA_SUBSAMPLING_DEFAULT: 4:2:0 is commonly used for Chroma subsampling.
+		CHROMA_SUBAMPLING_HIGH_QUALITY: Use 4:4:4, or no subsampling, when a sufficient high quality is requested.
+		SUBAMPLING_HIGH_QUALITY_THRESHOLD: At or above this value, use CHROMA_SUBAMPLING_HIGH_QUALITY 
+		QUANTIZER_DEFAULT:
 			We need more testing to really know what quantizer settings are optimal,
 			but teams at Google have been using maximum=30 as a starting point.
-		DEFAULT_QUALITY: following gd conventions, -1 indicates the default.
-		DEFAULT_SPEED: AVIF_SPEED_DEFAULT is -1. This simply tells the AVIF encoder to use the default speed.
+		QUALITY_DEFAULT: following gd conventions, -1 indicates the default.
+		SPEED_DEFAULT: AVIF_SPEED_DEFAULT is -1. This simply tells the AVIF encoder to use the default speed.
 */
 
-#define DEFAULT_CHROMA_SUBSAMPLING AVIF_PIXEL_FORMAT_YUV420
-#define DEFAULT_QUANTIZER 30
-#define DEFAULT_QUALITY -1
-#define DEFAULT_SPEED AVIF_SPEED_DEFAULT
+#define CHROMA_SUBSAMPLING_DEFAULT AVIF_PIXEL_FORMAT_YUV420
+#define CHROMA_SUBAMPLING_HIGH_QUALITY AVIF_PIXEL_FORMAT_YUV444
+#define HIGH_QUALITY_SUBSAMPLING_THRESHOLD 90
+#define QUANTIZER_DEFAULT 30
+#define QUALITY_DEFAULT -1
+#define SPEED_DEFAULT AVIF_SPEED_DEFAULT
 
 // This initial size for the gdIOCtx is standard among GD image conversion functions.
 #define NEW_DYNAMIC_CTX_SIZE 2048
@@ -93,7 +99,6 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
  */
 static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb) {
 	int imageArea, tiles, tilesLog2, encoderTiles;
-	int tileRowsLog2, tileColumnsLog2, maxThreads;
 
 	if (overflow2(rgb->width, rgb->height))
 		return AVIF_FALSE;
@@ -106,7 +111,7 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 
 	// The number of tiles in any dimension will always be a power of 2. We can only specify log(2)tiles.
 
-	tilesLog2 = floor(log10(tiles) / log10(2));
+	tilesLog2 = floor(log2(tiles));
 
 	// If the image's width is greater than the height, use more tile columns
 	// than tile rows to make the tile size close to a square.
@@ -120,7 +125,7 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 	}
 
 	// It's good to have one thread per tile.
-	encoderTiles = (int) (pow(2, encoder->tileRowsLog2) * pow(2, encoder->tileColsLog2));
+	encoderTiles = (1 << encoder->tileRowsLog2) * (1 << encoder->tileColsLog2);
 	encoder->maxThreads = encoderTiles;
 
 	return AVIF_TRUE;
@@ -234,7 +239,6 @@ static avifIO *createAvifIOFromCtx(gdIOCtx *ctx) {
 		because the file is corrupt or does not contain a AVIF
 		image). <gdImageCreateFromAvif> does not close the file.
 
-
 		This function creates a gdIOCtx struct from the file pointer it's passed.
 		And then it relies on <gdImageCreateFromAvifCtx> to do the real decoding work.
 		If the file contains an image sequence, we simply read the first one, discarding the rest.
@@ -339,20 +343,20 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 		goto cleanup;		
 	}
 
-	// memset(rgb, 0, sizeof(rgb));
-
 	avifDecoderSetIO(decoder, io);
 
 	result = avifDecoderParse(decoder);
 	if (isAvifError(result, "Could not parse image")) 
 		goto cleanup;
 
+	// insert sRGB check
+
 	// Note again that, for an image sequence, we read only the first image, ignoring the rest.
 	result = avifDecoderNextImage(decoder);
 	if (isAvifError(result, "Could not decode image")) 
 		goto cleanup;
 
-	// Set up the avifRGBImage. Use default settings unless there's demand to override these.
+	// Set up the avifRGBImage, and convert it from YUV to RGB.
 	avifRGBImageSetDefaults(&rgb, decoder->image);
 	avifRGBImageAllocatePixels(&rgb);
 
@@ -367,7 +371,8 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 	}
 
 // Read the pixels from the AVIF image and copy them into the GD image.
-// Image depth can be 8, 10, 12, or 16. But if depth>8, pixels are 16-bit.
+// Pixel depth can be 8, 10, or 12 bits. But if depth>8, pixels are 16-bit.
+// Since avifDecoderNextImage() has succeeded, we know we've got a valid pixel depth.
 
 	if (rgb.depth == 8) {
 		for (y = 0, p8 = rgb.pixels; y < decoder->image->height; y++) {
@@ -435,7 +440,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 		speed	 - The speed of compression (0-10). 0 is slowest, 10 is fastest.
 
 	Notes on parameters: 
-		quality - If quality = -1, we use a default quality as defined in DEFAULT_QUALITY.
+		quality - If quality = -1, we use a default quality as defined in QUALITY_DEFAULT.
 			For information on how we convert this quality to libavif's quantity param, see <quality2Quantizer>.
 
 		speed - At slower speeds, encoding may be quite slow. Use judiciously.
@@ -452,7 +457,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 	 We need this underscored function because gdImageAvifCtx() can't return anything.
 	 And our functions that operate on a memory buffer need to know whether the encoding has succeeded.
 
-	 If we're passed the DEFAULT_QUALITY of -1, set the quantizer params to DEFAULT_QUANTIZER.
+	 If we're passed the QUALITY_DEFAULT of -1, set the quantizer params to QUANTIZER_DEFAULT.
 
 	 This function returns 0 on success, or 1 on failure.
  */
@@ -462,6 +467,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	avifRGBImage rgb;
 	avifRWData avifOutput = AVIF_DATA_EMPTY;
 	avifBool failed = AVIF_FALSE;
+	avifEncoder *encoder = NULL;
 
 	uint32_t val;
 	uint8_t *p;
@@ -475,8 +481,11 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 		gd_error("avif doesn't support palette images");
 		return 1;
 	}
+	
+	avifPixelFormat subsampling = quality >= HIGH_QUALITY_SUBSAMPLING_THRESHOLD ?
+                                CHROMA_SUBAMPLING_HIGH_QUALITY : CHROMA_SUBSAMPLING_DEFAULT;
 
-	avifImage *avifIm = avifImageCreate(gdImageSX(im), gdImageSY(im), 8, DEFAULT_CHROMA_SUBSAMPLING);
+	avifImage *avifIm = avifImageCreate(gdImageSX(im), gdImageSY(im), 8, subsampling);
 
 	rgb.width = gdImageSX(im);
 	rgb.height = gdImageSY(im);
@@ -502,16 +511,26 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 		}
 	}
 
+	// Set the YUV range, and convert the image to YUV.
+	// Set the ICC to sRGB, as that's gd supports right now.
+
+	avifIm->yuvRange = AVIF_RANGE_FULL;
+	avifIm->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
+	avifIm->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
+	avifIm->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+
 	result = avifImageRGBToYUV(avifIm, &rgb);
 	failed = isAvifError(result, "Could not convert image to YUV");
 	if (failed)
 		goto cleanup;
 
+
+
 	// Encode the image in AVIF format.
 
-	avifEncoder *encoder = avifEncoderCreate();
-	int quantizerQuality = quality == DEFAULT_QUALITY ? 
-												 DEFAULT_QUANTIZER : quality2Quantizer(quality);
+	encoder = avifEncoderCreate();
+	int quantizerQuality = quality == QUALITY_DEFAULT ? 
+												 QUANTIZER_DEFAULT : quality2Quantizer(quality);
 
 	encoder->minQuantizer = quantizerQuality;
 	encoder->maxQuantizer = quantizerQuality;
@@ -563,7 +582,7 @@ BGD_DECLARE(void) gdImageAvifEx(gdImagePtr im, FILE *outFile, int quality, int s
 
 BGD_DECLARE(void) gdImageAvif(gdImagePtr im, FILE *outFile)
 {
-	gdImageAvifEx(im, outFile, DEFAULT_QUALITY, AVIF_SPEED_DEFAULT);
+	gdImageAvifEx(im, outFile, QUALITY_DEFAULT, AVIF_SPEED_DEFAULT);
 }
 
 BGD_DECLARE(void *) gdImageAvifPtrEx(gdImagePtr im, int *size, int quality, int speed)
@@ -586,7 +605,7 @@ BGD_DECLARE(void *) gdImageAvifPtrEx(gdImagePtr im, int *size, int quality, int 
 
 BGD_DECLARE(void *) gdImageAvifPtr(gdImagePtr im, int *size)
 {
-	return gdImageAvifPtrEx(im, size, DEFAULT_QUALITY, AVIF_SPEED_DEFAULT);
+	return gdImageAvifPtrEx(im, size, QUALITY_DEFAULT, AVIF_SPEED_DEFAULT);
 }
 
 
