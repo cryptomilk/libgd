@@ -182,12 +182,14 @@ static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, s
 	// Read the number of bytes requested. 
 	// If getBuf() returns a negative value, that means there was an error.
 	int charsRead = ctx->getBuf(ctx, dataBuf, size);
-	if (charsRead < 0) 
+	if (charsRead < 0) {
+		gdFree(dataBuf);
 		return AVIF_RESULT_IO_ERROR;
+	}
 
 	out->data = dataBuf;
 	out->size = charsRead;
-	return AVIF_RESULT_OK;	// or AVIF_RESULT_TRUNCATED_DATA ....
+	return charsRead == size ? AVIF_RESULT_OK : AVIF_RESULT_TRUNCATED_DATA;
 }
 
 // avif.h says this is optional, but it seemed easy to implement.
@@ -397,13 +399,11 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 		}
 	}
 
-	/* do not use gdFree here, in case gdFree/alloc is mapped to something else than libc. */
-
-//TODO: decide what truly has to be freed
 	cleanup:
-		avifDecoderDestroy(decoder);
-		// avifFree(io);
-		// avifRGBImageFreePixels(&rgb);
+		avifDecoderDestroy(decoder);		// if io has been allocated, this frees it
+
+		if (rgb.pixels)
+			avifRGBImageFreePixels(&rgb);
 
 		im->saveAlphaFlag = 1;
 		return im;
@@ -512,7 +512,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	}
 
 	// Set the YUV range, and convert the image to YUV.
-	// Set the ICC to sRGB, as that's gd supports right now.
+	// Set the ICC to sRGB, as that's what gd supports right now.
 
 	avifIm->yuvRange = AVIF_RANGE_FULL;
 	avifIm->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
@@ -523,8 +523,6 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	failed = isAvifError(result, "Could not convert image to YUV");
 	if (failed)
 		goto cleanup;
-
-
 
 	// Encode the image in AVIF format.
 
@@ -542,7 +540,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	if (failed)
 		goto cleanup;
 
-	result = avifEncoderAddImage(encoder, avifIm, 1, AVIF_ADD_IMAGE_FLAG_SINGLE); //TODO: why 1?
+	result = avifEncoderAddImage(encoder, avifIm, 1, AVIF_ADD_IMAGE_FLAG_SINGLE); //TODO: is there a reason to use timeSscales != 1?
 	failed = isAvifError(result, "Could not encode image");
 	if (failed)
 		goto cleanup;
