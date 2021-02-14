@@ -24,9 +24,6 @@
 #ifdef HAVE_LIBAVIF
 #include <avif/avif.h>
 
-// TODO: more error checking, everywhere
-// TODO: make sure all indents are tabs, not spaces
-
 /*
 	Define defaults for encoding images:
 		CHROMA_SUBSAMPLING_DEFAULT: 4:2:0 is commonly used for Chroma subsampling.
@@ -59,6 +56,23 @@
 #define MAX_TILES 8
 #define MAX_THREADS 64
 
+/*** Macros ***/
+
+/*
+	From gd_png.c:
+		convert the 7-bit alpha channel to an 8-bit alpha channel.
+		We do a little bit-flipping magic, repeating the MSB
+		as the LSB, to ensure that 0 maps to 0 and
+		127 maps to 255. We also have to invert to match
+		PNG's convention in which 255 is opaque. 
+*/
+#define alpha7BitTo8Bit(alpha7Bit) \
+	(alpha7Bit == 127 ? \
+				0 : \
+				255 - ((alpha7Bit << 1) + (alpha7Bit >> 6)))
+
+#define alpha8BitTo7Bit(alpha8Bit) (gdAlphaMax - (alpha8Bit >> 1))
+
 
 /*** Helper functions ***/
 
@@ -77,20 +91,6 @@ static int quality2Quantizer(int quality) {
 }
 
 /*
-	From gd_png.c:
-		convert the 7-bit alpha channel to an 8-bit alpha channel.
-		We do a little bit-flipping magic, repeating the MSB
-		as the LSB, to ensure that 0 maps to 0 and
-		127 maps to 255. We also have to invert to match
-		PNG's convention in which 255 is opaque. 
-*/
-static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
-	return originalAlpha == 127 ? 
-				0 : 
-				255 - ((originalAlpha << 1) + (originalAlpha >> 6));
-}
-
-/*
 	 As of February 2021, this algorithm reflects the latest research on how many tiles
 	 and threads to include for a given image size.
 	 This is subject to change as research continues.
@@ -100,9 +100,7 @@ static uint8_t convertTo8BitAlpha(uint8_t originalAlpha) {
 static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rgb) {
 	int imageArea, tiles, tilesLog2, encoderTiles;
 
-	if (overflow2(rgb->width, rgb->height))
-		return AVIF_FALSE;
-	
+	// _gdImageAvifCtx(), the calling function, checks this operation for overflow
 	imageArea = rgb->width * rgb->height;
 
 	tiles = (int) ceil((double) imageArea / MIN_TILE_AREA);
@@ -138,7 +136,7 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 */
 static avifBool isAvifError(avifResult result, const char *msg) {
 	if (result != AVIF_RESULT_OK) {
-		gd_error("avif error: %s: %s", msg, avifResultToString(result));
+		gd_error("avif error - %s: %s", msg, avifResultToString(result));
 		return AVIF_TRUE;
 	}
 
@@ -175,7 +173,7 @@ static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, s
 
 	dataBuf = gdMalloc(size);
 	if (!dataBuf) {
-		gd_error("avif error: couldn't allocate memory");
+		gd_error("avif error - couldn't allocate memory");
 		return AVIF_RESULT_UNKNOWN_ERROR;
 	}
 
@@ -297,7 +295,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr(int size, void *data)
 		return 0;
 
 	im = gdImageCreateFromAvifCtx(ctx);
-	ctx->gd_free(ctx);
+//	ctx->gd_free(ctx);
 
 	return im;
 }
@@ -329,19 +327,20 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr(int size, void *data)
 BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 {
 	int x, y;
-	uint8_t *p8; 
-	uint16_t *p16;
 	gdImage *im = NULL;
 	avifResult result;
 	avifIO *io;
 	avifDecoder *decoder;
 	avifRGBImage rgb;
 
+	// this lets us know that memory hasn't been allocated yet for the pixels
+	rgb.pixels = NULL;
+
 	decoder = avifDecoderCreate();
 
 	io = createAvifIOFromCtx(ctx);
 	if (!io) {
-		gd_error("avif error: Could not allocate memory");
+		gd_error("avif error - Could not allocate memory");
 		goto cleanup;		
 	}
 
@@ -351,61 +350,51 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 	if (isAvifError(result, "Could not parse image")) 
 		goto cleanup;
 
-	// insert sRGB check
+	// TODO: insert sRGB check, or don't
 
 	// Note again that, for an image sequence, we read only the first image, ignoring the rest.
 	result = avifDecoderNextImage(decoder);
 	if (isAvifError(result, "Could not decode image")) 
 		goto cleanup;
 
-	// Set up the avifRGBImage, and convert it from YUV to RGB.
+	// Set up the avifRGBImage, and convert it from YUV to an 8-bit RGB image.
+	// (While AVIF image pixel depth can be 8, 10, or 12 bits, GD truecolor images are 8-bit.)
 	avifRGBImageSetDefaults(&rgb, decoder->image);
+	rgb.depth = 8;
 	avifRGBImageAllocatePixels(&rgb);
 
 	result = avifImageYUVToRGB(decoder->image, &rgb);
-	if (isAvifError(result, "gd-avif error: Conversion from YUV to RGB failed")) 
+	if (isAvifError(result, "Conversion from YUV to RGB failed")) 
 		goto cleanup;
 
 	im = gdImageCreateTrueColor(decoder->image->width, decoder->image->height);
 	if (!im) {
-		gd_error("avif error: Could not create GD truecolor image");
+		gd_error("avif error - Could not create GD truecolor image");
 		goto cleanup;
 	}
 
-// Read the pixels from the AVIF image and copy them into the GD image.
-// Pixel depth can be 8, 10, or 12 bits. But if depth>8, pixels are 16-bit.
-// Since avifDecoderNextImage() has succeeded, we know we've got a valid pixel depth.
+	im->saveAlphaFlag = 1;
 
-	if (rgb.depth == 8) {
-		for (y = 0, p8 = rgb.pixels; y < decoder->image->height; y++) {
-			for (x = 0; x < decoder->image->width; x++) {
-				uint8_t r = *(p8++);
-				uint8_t g = *(p8++);
-				uint8_t b = *(p8++);
-				uint8_t a = *(p8++);
-				im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, a);
-			}
-		}
-		
-	} else {
-		for (y = 0, p16 = (uint16_t *) rgb.pixels; y < decoder->image->height; y++) {
-			for (x = 0; x < decoder->image->width; x++) {
-				uint16_t r = *(p16++);
-				uint16_t g = *(p16++);
-				uint16_t b = *(p16++);
-				uint16_t a = *(p16++);
-				im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, a);
-			}
+// Read the pixels from the AVIF image and copy them into the GD image.
+
+	uint8_t *p = rgb.pixels;
+	
+	for (y = 0; y < decoder->image->height; y++) {
+		for (x = 0; x < decoder->image->width; x++) {
+			uint8_t r = *(p++);
+			uint8_t g = *(p++);
+			uint8_t b = *(p++);
+			uint8_t a = alpha8BitTo7Bit(*(p++));
+			im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, a);
 		}
 	}
-
+	
 	cleanup:
 		avifDecoderDestroy(decoder);		// if io has been allocated, this frees it
 
 		if (rgb.pixels)
 			avifRGBImageFreePixels(&rgb);
 
-		im->saveAlphaFlag = 1;
 		return im;
 }
 
@@ -482,6 +471,16 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 		return 1;
 	}
 	
+	if (!gdImageSX(im) || !gdImageSY(im)) {
+		gd_error("at least one image dimension is zero");
+		return(1);
+	}
+
+	if (overflow2(gdImageSX(im), gdImageSY(im))) {
+		gd_error("image dimensions are too large");
+		return(1);
+	}
+
 	avifPixelFormat subsampling = quality >= HIGH_QUALITY_SUBSAMPLING_THRESHOLD ?
                                 CHROMA_SUBAMPLING_HIGH_QUALITY : CHROMA_SUBSAMPLING_DEFAULT;
 
@@ -497,17 +496,17 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	avifRGBImageAllocatePixels(&rgb); // this allocates memory, and sets rgb.rowBytes and rgb.pixels.
 
 	// Parse RGB data from the GD image, and copy it into the AVIF RGB image.
+	// Convert 7-bit GD alpha channel values to 8-bit AVIF values.
+
 	p = rgb.pixels;
 	for (y = 0; y < rgb.height; y++) {
 		for (x = 0; x < rgb.width; x++) {
 			val = im->tpixels[y][x];
 
-			a = convertTo8BitAlpha(gdTrueColorGetAlpha(val));
-
 			*(p++) = gdTrueColorGetRed(val);
 			*(p++) = gdTrueColorGetGreen(val);
 			*(p++) = gdTrueColorGetBlue(val);
-			*(p++) = a;
+			*(p++) = alpha7BitTo8Bit(gdTrueColorGetAlpha(val));
 		}
 	}
 

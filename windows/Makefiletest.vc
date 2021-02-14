@@ -1,8 +1,12 @@
 TESTS=bmp\bmp_im2im \
 bmp\bmp_null \
+avif_ptr_double_free \
+avif_im2im \
+avif_null \
 avif\avif2jpeg \
 avif\png2avif \
 avif\jpeg2avif \
+avif\jpeg2avifex \
 freetype\bug00132 \
 gd\gd_im2im \
 gd\gd_null \

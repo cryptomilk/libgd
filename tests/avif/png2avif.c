@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 	FILE *in, *out;
 
 	if (argc != 3) {
-		fprintf(stderr, "Usage: png2avif filename.png filename.avif\n");
+		fprintf(stderr, "Usage: png2avif infile.png outfile.avif\n");
 		exit(1);
 	}
 

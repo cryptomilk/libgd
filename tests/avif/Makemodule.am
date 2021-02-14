@@ -1,10 +1,18 @@
 if HAVE_LIBAVIF
+libgd_test_programs += \
+	avif/avif_ptr_double_free
+	avif/avif_im2im
+	avif/avif_null
+	avif/png2avif
+
 if HAVE_LIBJPEG
 libgd_test_programs += \
 	avif/avif2jpeg \
 	avif/jpeg2avif
+	avif/jpeg2avifex
 	avif/png2avif
 endif
+
 endif
 
 EXTRA_DIST += \
