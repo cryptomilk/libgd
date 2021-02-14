@@ -378,7 +378,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 // Read the pixels from the AVIF image and copy them into the GD image.
 
 	uint8_t *p = rgb.pixels;
-	
+
 	for (y = 0; y < decoder->image->height; y++) {
 		for (x = 0; x < decoder->image->width; x++) {
 			uint8_t r = *(p++);
@@ -434,6 +434,10 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 
 		speed - At slower speeds, encoding may be quite slow. Use judiciously.
 
+		Qualities or speeds that are lower than the minimum value get clamped to the minimum value,
+		abd qualities or speeds that are lower than the maximum value get clamped to the maxmum value.
+		
+
 	Returns:
 
 		* for <gdImageAvifEx>, <gdImageAvif>, and <gdImageAvifCtx>, nothing.
@@ -480,6 +484,9 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 		gd_error("image dimensions are too large");
 		return(1);
 	}
+
+	if (speed != AVIF_SPEED_DEFAULT)
+		speed = CLAMP(speed, AVIF_SPEED_SLOWEST, AVIF_SPEED_FASTEST);
 
 	avifPixelFormat subsampling = quality >= HIGH_QUALITY_SUBSAMPLING_THRESHOLD ?
                                 CHROMA_SUBAMPLING_HIGH_QUALITY : CHROMA_SUBSAMPLING_DEFAULT;
