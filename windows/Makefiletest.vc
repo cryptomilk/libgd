@@ -1,8 +1,9 @@
 TESTS=bmp\bmp_im2im \
 bmp\bmp_null \
-avif_ptr_double_free \
-avif_im2im \
-avif_null \
+avif\avif_ptr_double_free \
+avif\avif_im2im \
+avif\avif_null \
+avif\compare_avif_to_png \
 avif\avif2jpeg \
 avif\png2avif \
 avif\jpeg2avif \

@@ -5,7 +5,6 @@
  * We create a simple gd image, we encode it to AVIF, and we decode it back to gd.
  * Then we make sure the image we started with and the image we finish with are the same.
  * 
- * Note that gdTestAssertMsg() exits if the condition it's passed is true.
  */
 
 #include "gd.h"
@@ -15,7 +14,7 @@
 int main()
 {
 	gdImagePtr srcGdIm, destGdIm;
-	void *avifIm;
+	void *avifImageDataPtr;
   FILE *fp;
 	int r, g, b;
 	int size = 0;
@@ -34,30 +33,35 @@ int main()
 
   // Encode the gd image to a test AVIF file.
   fp = gdTestTempFp();
-  gdImageAvifEx(srcGdIm, fp, 100, -1);
+  gdImageAvif(srcGdIm, fp);
   fclose(fp);
   
   // Encode the gd image to an AVIF image in memory.
-  avifIm = gdImageAvifPtrEx(srcGdIm, &size, 100, -1);
-  gdTestAssertMsg(avifIm != NULL, "gdImageAvifPtr() returned null\n");
-  gdTestAssertMsg(size > 0, "gdImageAvifPtr() returned a non-positive size");
+  avifImageDataPtr = gdImageAvifPtrEx(srcGdIm, &size, 100, 10);
+  gdTestAssertMsg(avifImageDataPtr != NULL, "gdImageAvifPtr() returned null\n");
+  gdTestAssertMsg(size > 0, "gdImageAvifPtr() returned a non-positive size\n");
 
   // Encode the AVIF image back into a gd image.
-	destGdIm = gdImageCreateFromAvifPtr(size, avifIm);
+	destGdIm = gdImageCreateFromAvifPtr(size, avifImageDataPtr);
   gdTestAssertMsg(destGdIm != NULL, "gdImageAvifPtr() returned null\n");
 
   // Encode that gd image to a test AVIF file.
   fp = gdTestTempFp();
-  gdImageAvifEx(destGdIm, fp, 100, -1);
+  gdImageAvif(destGdIm, fp);
   fclose(fp);
 
   // Make sure the image we started with is the same as the image after two conversions.
   // gdTestImageDiff(srcGdIm, destGdIm, NULL, &result);
   // gdTestAssertMsg(result.pixels_changed == 0, "pixels changed: %d\n", result.pixels_changed);
 
-  gdImageDestroy(srcGdIm);
-  gdImageDestroy(destGdIm);
-  gdFree(avifIm);
+  if (srcGdIm)
+    gdImageDestroy(srcGdIm);
+
+  if (destGdIm)  
+    gdImageDestroy(destGdIm);
+
+  if (avifImageDataPtr)
+    gdFree(avifImageDataPtr);
 
   return gdNumFailures();
 }

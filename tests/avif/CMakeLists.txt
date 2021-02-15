@@ -3,8 +3,14 @@ LIST(APPEND TESTS_FILES
 	avif_ptr_double_free
 	avif_im2im
 	avif_null
-	png2avif
 )
+
+IF(PNG_FOUND)
+LIST(APPEND TESTS_FILES
+	png2avif
+	compare_avif_to_png
+)
+ENDIF(PNG_FOUND)
 
 IF(JPEG_FOUND)
 LIST(APPEND TESTS_FILES

@@ -24,7 +24,11 @@ int main()
     dst = gdImageAvifPtr(src, &size);
     gdTestAssert(dst == NULL);
 
-    gdImageDestroy(src);
+    if (src)
+        gdImageDestroy(src);
+
+    if (dst)
+        gdImageDestroy(dst);
 
     return gdNumFailures();
 }

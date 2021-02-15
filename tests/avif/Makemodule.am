@@ -3,7 +3,11 @@ libgd_test_programs += \
 	avif/avif_ptr_double_free
 	avif/avif_im2im
 	avif/avif_null
+
+if HAVE_PNG
 	avif/png2avif
+	avif/compare_avif_to_png
+endif
 
 if HAVE_LIBJPEG
 libgd_test_programs += \
