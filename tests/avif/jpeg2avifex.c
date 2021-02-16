@@ -1,5 +1,5 @@
 /**
- * A short program which converts a .jpg file into a .avif file - 
+ * A short program which converts a .jpg file into a .avif file -
  * just to get a little practice with the basic functionality.
  */
 
@@ -54,10 +54,10 @@ int main(int argc, char **argv)
 	if (optind > argc - 2)
 		usage();
 
-  infile = malloc((strlen(argv[optind]) + 1) * sizeof(char));
+	infile = malloc((strlen(argv[optind]) + 1) * sizeof(char));
 	strcpy(infile, argv[optind++]);
 
-  outfile = malloc((strlen(argv[optind]) + 1) * sizeof(char));
+	outfile = malloc((strlen(argv[optind]) + 1) * sizeof(char));
 	strcpy(outfile, argv[optind]);
 
 	printf("Reading infile %s\n", infile);
@@ -86,7 +86,7 @@ int main(int argc, char **argv)
 
 	gdImageAvifEx(im, out, quality, speed);
 
-  printf("Wrote outfile %s.\n", outfile);
+	printf("Wrote outfile %s.\n", outfile);
 
 	fclose(out);
 	gdImageDestroy(im);

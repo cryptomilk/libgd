@@ -1,5 +1,5 @@
 /**
- * A short program which converts a .png file into a .avif file - 
+ * A short program which converts a .png file into a .avif file -
  * just to get a little practice with the basic functionality.
  */
 
@@ -48,7 +48,7 @@ int main(int argc, char **argv)
 
 	gdImageAvif(im, out);
 
-  printf("Wrote outfile %s.\n", argv[2]);
+	printf("Wrote outfile %s.\n", argv[2]);
 
 	fclose(out);
 	gdImageDestroy(im);

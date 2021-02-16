@@ -1,5 +1,5 @@
 /**
- * A short program which converts a .jpg file into a .avif file - 
+ * A short program which converts a .jpg file into a .avif file -
  * just to get a little practice with the basic functionality.
  */
 

@@ -13,22 +13,22 @@
 
 int main()
 {
-    gdImagePtr src, dst;
-    int size;
+	gdImagePtr src, dst;
+	int size;
 
-    src = gdImageCreateTrueColor(1, 10);
-    gdTestAssert(src != NULL);
+	src = gdImageCreateTrueColor(1, 10);
+	gdTestAssert(src != NULL);
 
-    src->sx = 0;  // making the width 0 should cause gdImageAvifPtr() to fail
+	src->sx = 0;  // making the width 0 should cause gdImageAvifPtr() to fail
 
-    dst = gdImageAvifPtr(src, &size);
-    gdTestAssert(dst == NULL);
+	dst = gdImageAvifPtr(src, &size);
+	gdTestAssert(dst == NULL);
 
-    if (src)
-        gdImageDestroy(src);
+	if (src)
+		gdImageDestroy(src);
 
-    if (dst)
-        gdImageDestroy(dst);
+	if (dst)
+		gdImageDestroy(dst);
 
-    return gdNumFailures();
+	return gdNumFailures();
 }

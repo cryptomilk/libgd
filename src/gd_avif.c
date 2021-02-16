@@ -2,7 +2,7 @@
  * File: AVIF IO
  *
  * Read and write AVIF images using libavif (https://github.com/AOMediaCodec/libavif) .
- * Currently, the only ICC profile we support is sRGB. 
+ * Currently, the only ICC profile we support is sRGB.
  * Since that's what web browsers use, it's sufficient for now.
  */
 
@@ -28,7 +28,7 @@
 	Define defaults for encoding images:
 		CHROMA_SUBSAMPLING_DEFAULT: 4:2:0 is commonly used for Chroma subsampling.
 		CHROMA_SUBAMPLING_HIGH_QUALITY: Use 4:4:4, or no subsampling, when a sufficient high quality is requested.
-		SUBAMPLING_HIGH_QUALITY_THRESHOLD: At or above this value, use CHROMA_SUBAMPLING_HIGH_QUALITY 
+		SUBAMPLING_HIGH_QUALITY_THRESHOLD: At or above this value, use CHROMA_SUBAMPLING_HIGH_QUALITY
 		QUANTIZER_DEFAULT:
 			We need more testing to really know what quantizer settings are optimal,
 			but teams at Google have been using maximum=30 as a starting point.
@@ -64,7 +64,7 @@
 		We do a little bit-flipping magic, repeating the MSB
 		as the LSB, to ensure that 0 maps to 0 and
 		127 maps to 255. We also have to invert to match
-		PNG's convention in which 255 is opaque. 
+		PNG's convention in which 255 is opaque.
 */
 #define alpha7BitTo8Bit(alpha7Bit) \
 	(alpha7Bit == 127 ? \
@@ -164,7 +164,7 @@ static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, s
 
 	//TODO: if we set sizeHint, this will be more efficient.
 
-	if (offset > LONG_MAX || size < 0) 
+	if (offset > LONG_MAX || size < 0)
 		return AVIF_RESULT_IO_ERROR;
 
 	// Try to seek offset bytes forward. If we pass the end of the buffer, throw an error.
@@ -177,7 +177,7 @@ static avifResult readFromCtx(avifIO *io, uint32_t readFlags, uint64_t offset, s
 		return AVIF_RESULT_UNKNOWN_ERROR;
 	}
 
-	// Read the number of bytes requested. 
+	// Read the number of bytes requested.
 	// If getBuf() returns a negative value, that means there was an error.
 	int charsRead = ctx->getBuf(ctx, dataBuf, size);
 	if (charsRead < 0) {
@@ -212,7 +212,7 @@ static avifIO *createAvifIOFromCtx(gdIOCtx *ctx) {
 	avifIO *io;
 
 	io = gdMalloc(sizeof(*io));
-	if (io == NULL) 
+	if (io == NULL)
 		return NULL;
 
 	io->read = readFromCtx;
@@ -347,14 +347,14 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 	avifDecoderSetIO(decoder, io);
 
 	result = avifDecoderParse(decoder);
-	if (isAvifError(result, "Could not parse image")) 
+	if (isAvifError(result, "Could not parse image"))
 		goto cleanup;
 
 	// TODO: insert sRGB check, or don't
 
 	// Note again that, for an image sequence, we read only the first image, ignoring the rest.
 	result = avifDecoderNextImage(decoder);
-	if (isAvifError(result, "Could not decode image")) 
+	if (isAvifError(result, "Could not decode image"))
 		goto cleanup;
 
 	// Set up the avifRGBImage, and convert it from YUV to an 8-bit RGB image.
@@ -364,7 +364,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 	avifRGBImageAllocatePixels(&rgb);
 
 	result = avifImageYUVToRGB(decoder->image, &rgb);
-	if (isAvifError(result, "Conversion from YUV to RGB failed")) 
+	if (isAvifError(result, "Conversion from YUV to RGB failed"))
 		goto cleanup;
 
 	im = gdImageCreateTrueColor(decoder->image->width, decoder->image->height);
@@ -428,7 +428,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 		quality - Compression quality (0-100). 0 is lowest-quality, 100 is highest.
 		speed	 - The speed of compression (0-10). 0 is slowest, 10 is fastest.
 
-	Notes on parameters: 
+	Notes on parameters:
 		quality - If quality = -1, we use a default quality as defined in QUALITY_DEFAULT.
 			For information on how we convert this quality to libavif's quantity param, see <quality2Quantizer>.
 
@@ -444,9 +444,9 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 		* for <gdImageAvifPtrEx> and <gdImageAvifPtr>, a pointer to the image in memory.
 */
 
-/* 
+/*
 	 Function: _gdImageAvifCtx
-	 
+	
 	 We need this underscored function because gdImageAvifCtx() can't return anything.
 	 And our functions that operate on a memory buffer need to know whether the encoding has succeeded.
 
@@ -467,7 +467,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	uint8_t a;
 	int x, y;
 
-	if (im == NULL) 
+	if (im == NULL)
 		return 1;
 
 	if (!gdImageTrueColor(im)) {
@@ -533,7 +533,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	// Encode the image in AVIF format.
 
 	encoder = avifEncoderCreate();
-	int quantizerQuality = quality == QUALITY_DEFAULT ? 
+	int quantizerQuality = quality == QUALITY_DEFAULT ?
 												 QUANTIZER_DEFAULT : quality2Quantizer(quality);
 
 	encoder->minQuantizer = quantizerQuality;
@@ -561,13 +561,13 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 	gdPutBuf(avifOutput.data, avifOutput.size, outfile);
 
 	cleanup:
-		if (rgb.pixels) 
+		if (rgb.pixels)
 			avifRGBImageFreePixels(&rgb);
 
-		if (encoder) 
+		if (encoder)
 			avifEncoderDestroy(encoder);
 
-		if (avifOutput.data) 
+		if (avifOutput.data)
 			avifRWDataFree(&avifOutput);
 
 		return failed;
@@ -577,7 +577,7 @@ BGD_DECLARE(void) gdImageAvifEx(gdImagePtr im, FILE *outFile, int quality, int s
 {
 	gdIOCtx *out = gdNewFileCtx(outFile);
 
-	if (out == NULL) 
+	if (out == NULL)
 		return;
 
 	gdImageAvifCtx(im, out, quality, speed);
