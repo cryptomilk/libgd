@@ -113,7 +113,7 @@ static avifBool setEncoderTilesAndThreads(avifEncoder *encoder, avifRGBImage *rg
 
 	// If the image's width is greater than the height, use more tile columns
 	// than tile rows to make the tile size close to a square.
-		
+
 	if (rgb->width >= rgb->height) {
 		encoder->tileRowsLog2 = tilesLog2 / 2;
 		encoder->tileColsLog2 = tilesLog2 - encoder->tileRowsLog2;
@@ -304,7 +304,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr(int size, void *data)
 	Function: gdImageCreateFromAvifCtx
 
 		See <gdImageCreateFromAvif>.
-		
+
 		Additional details: the AVIF library comes with functions to create an IO object from
 		a file and from a memory pointer. Of course, it doesn't have a way to create an IO object
 		from a gdIOCtx. So, here, we use our own helper function, <createAvifIOfromCtx>.
@@ -317,9 +317,9 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifPtr(int size, void *data)
 		* avifRGBImageSetDefaults(), to create the avifRGBImage
 		* avifRGBImageAllocatePixels(), to allocate memory for the pixels
 		* avifImageYUVToRGB(), to convert YUV to RGB
-		
+
 		Finally, we create a new gd image and copy over the pixel data.
-	
+
 	Parameters:
 
 		ctx							- a gdIOCtx struct
@@ -341,7 +341,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 	io = createAvifIOFromCtx(ctx);
 	if (!io) {
 		gd_error("avif error - Could not allocate memory");
-		goto cleanup;		
+		goto cleanup;
 	}
 
 	avifDecoderSetIO(decoder, io);
@@ -388,7 +388,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 			im->tpixels[y][x] = gdTrueColorAlpha(r, g, b, a);
 		}
 	}
-	
+
 	cleanup:
 		avifDecoderDestroy(decoder);		// if io has been allocated, this frees it
 
@@ -436,7 +436,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 
 		Qualities or speeds that are lower than the minimum value get clamped to the minimum value,
 		abd qualities or speeds that are lower than the maximum value get clamped to the maxmum value.
-		
+
 
 	Returns:
 
@@ -446,7 +446,7 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromAvifCtx (gdIOCtx *ctx)
 
 /*
 	 Function: _gdImageAvifCtx
-	
+
 	 We need this underscored function because gdImageAvifCtx() can't return anything.
 	 And our functions that operate on a memory buffer need to know whether the encoding has succeeded.
 
@@ -474,7 +474,7 @@ static avifBool _gdImageAvifCtx(gdImagePtr im, gdIOCtx *outfile, int quality, in
 		gd_error("avif doesn't support palette images");
 		return 1;
 	}
-	
+
 	if (!gdImageSX(im) || !gdImageSY(im)) {
 		gd_error("at least one image dimension is zero");
 		return(1);
