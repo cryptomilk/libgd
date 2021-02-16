@@ -4,7 +4,7 @@ libgd_test_programs += \
 	avif/avif_im2im
 	avif/avif_null
 
-if HAVE_PNG
+if HAVE_LIBPNG
 	avif/png2avif
 	avif/compare_avif_to_png
 endif
